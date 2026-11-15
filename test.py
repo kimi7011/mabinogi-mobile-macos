@@ -39,6 +39,10 @@ elif tool == "launchctl":
     if command == "print":
         if not state.get("loaded"):
             sys.exit(1)
+        if state.get("pending", 0):
+            state["pending"] -= 1
+            if state["pending"] == 0:
+                state["value"] = 1300000
         print("last exit code = 0")
     elif command in ("bootstrap", "kickstart"):
         if os.environ.get("TEST_BOOTSTRAP_FAIL"):
@@ -48,7 +52,10 @@ elif tool == "launchctl":
         config = plistlib.loads(pathlib.Path(state["plist"]).read_bytes())
         assert config["RunAtLoad"] is True
         assert config["ProgramArguments"] == [str(root / "sysctl"), "-w", "net.inet.tcp.sendspace=1300000"]
-        state["value"] = 1300000
+        if os.environ.get("TEST_DELAY_RUN"):
+            state["pending"] = 2
+        else:
+            state["value"] = 1300000
         state["loaded"] = True
         state["runs"] = state.get("runs", 0) + 1
     elif command == "bootout":
@@ -103,6 +110,9 @@ def test_network_script(built_app=None):
         state = run("install")
         assert state["runs"] == 2
         assert plistlib.loads(plist.read_bytes())["MabinogiOriginalSendspace"] == 131072
+        state["value"] = 131072
+        state_file.write_text(json.dumps(state))
+        assert run("install", TEST_DELAY_RUN="1")["value"] == 1300000, "wait for the new run, not a stale successful exit"
         state = run("remove")
         assert state["value"] == 131072 and not state["loaded"] and not plist.exists()
         assert run("remove")["value"] == 131072

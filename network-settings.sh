@@ -58,8 +58,8 @@ EOF
         /bin/launchctl bootstrap system "$plist"
     fi
     for _attempt in 1 2 3 4 5; do
-        if /bin/launchctl print "system/$label" | /usr/bin/grep -q 'last exit code = 0'; then
-            [ "$(/usr/sbin/sysctl -n net.inet.tcp.sendspace)" = "$target_value" ]
+        if /bin/launchctl print "system/$label" | /usr/bin/grep -q 'last exit code = 0' &&
+           [ "$(/usr/sbin/sysctl -n net.inet.tcp.sendspace)" = "$target_value" ]; then
             echo '開機自動設定已安裝，數值已驗證。'
             exit 0
         fi
