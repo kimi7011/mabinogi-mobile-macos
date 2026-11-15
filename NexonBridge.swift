@@ -139,7 +139,12 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
 
     private func prepareHandler(_ completion: @escaping () -> Void) {
         let current = NSWorkspace.shared.urlForApplication(toOpen: URL(string: Launcher.gameURL)!)
-        if current?.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL {
+        // Gatekeeper may run a downloaded App from an AppTranslocation path.
+        // All copies of this tool share the selected bottle in UserDefaults, so
+        // an installed handler with our bundle ID already routes to that bottle.
+        let ownID = Bundle.main.bundleIdentifier
+        let handledByThisTool = ownID != nil && current.flatMap { Bundle(url: $0)?.bundleIdentifier } == ownID
+        if current?.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL || handledByThisTool {
             completion()
             return
         }
