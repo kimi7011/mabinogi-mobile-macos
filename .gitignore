@@ -4,6 +4,7 @@
 dist/
 *.app/
 *.zip
+!MabinogiMobileMac-arm64.zip
 *.dmg
 *.log
 *.reg

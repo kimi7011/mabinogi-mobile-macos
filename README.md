@@ -2,18 +2,20 @@
 
 讓台灣版《瑪奇 Mobile》的 Nexon Launcher 在 macOS / CrossOver 下完成登入、下載與啟動的輕量工具。
 
-**[下載 v0.1.1 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/tag/v0.1.1)** · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
+**[下載安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/raw/refs/heads/main/MabinogiMobileMac-arm64.zip)** · [SHA-256](SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
 
 原先手動修復的環境已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
 
-**v0.1.1 的獨立安裝驗證尚在進行。** 已實際從 GitHub 下載 v0.1.0 及 v0.1.1 測試草稿、驗證校驗碼，在全新容器安裝及更新官方 Nexon，並以新版工具啟動該容器。下載包已完成獨立位置安裝、重複安裝與移除；移除後已實測還原原本的登入連結處理程式。公開版網路設定也已實際完成管理員安裝、執行及移除，確認原有開機項目與 TCP 數值保持不變。新版首次 Facebook 登入與遊戲啟動畫面仍待完成；不可將原手動修復成功視為公開包的完整驗證。遊戲資源使用 APFS 獨立副本，尚未在新容器重新下載全部資源。
+**公開安裝包的獨立驗證尚在進行。** 已實際從 GitHub 下載安裝包、驗證校驗碼，在全新容器安裝及更新官方 Nexon，並以新版工具啟動該容器。下載包已完成獨立位置安裝、重複安裝與移除；移除後已實測還原原本的登入連結處理程式。公開版網路設定也已實際完成管理員安裝、執行及移除，確認原有開機項目與 TCP 數值保持不變。新版首次 Facebook 登入與遊戲啟動畫面仍待完成；不可將原手動修復成功視為公開包的完整驗證。遊戲資源使用 APFS 獨立副本，尚未在新容器重新下載全部資源。
+
+安裝包固定使用相同檔名；後續修正直接更新此檔案與說明。
 
 ## 第一次安裝
 
 1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
 2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
 3. 安裝結束後，讓官方 Nexon Launcher 完成首次更新。若此時顯示空白或黑屏，先關閉這個容器中的 Nexon，繼續下一步。
-4. 在本專案 Releases 下載 Apple Silicon 版 `MabinogiMobileMac-v0.1.1-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
+4. 使用上方連結下載 Apple Silicon 安裝包 `MabinogiMobileMac-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
 5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
 6. 使用自己的 Nexon／Facebook 帳號登入。瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」時，允許返回啟動器，再安裝及執行遊戲。
 
@@ -46,7 +48,7 @@ TCP 設定會影響整台 Mac。本專案只安裝 `/Library/LaunchDaemons/io.gi
 
 ### 保留現有入口、安裝另一份
 
-v0.1.1 不會覆蓋原修復版本的入口，遇到同名舊 App 會停止並提示另選位置。可在下載包目錄執行：
+安裝器會保留原修復入口，遇到同名舊 App 會停止並提示另選位置。可在下載包目錄執行：
 
 ```sh
 bash install.command --app-dir "$HOME/Applications/MabinogiMobileMac"
