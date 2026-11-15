@@ -2,21 +2,26 @@
 
 讓台灣版《瑪奇 Mobile》的 Nexon Launcher 在 macOS / CrossOver 下完成登入、下載與啟動的輕量工具。
 
-**[下載 v0.1.0 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/tag/v0.1.0)** · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
+**[下載 v0.1.1 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/tag/v0.1.1)** · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
 
-這次修復已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。實測日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
+原先手動修復的環境已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
+
+**v0.1.1 的獨立安裝驗證尚在進行。** 已實際從 GitHub 下載 v0.1.0、驗證校驗碼，在全新容器安裝及更新官方 Nexon，並以新版工具啟動該容器。新版首次 Facebook 登入、遊戲啟動畫面及需要管理員權限的安裝／移除往返測試，仍待完成；不可將原手動修復成功視為公開包的完整驗證。遊戲資源使用 APFS 獨立副本，尚未在新容器重新下載全部資源。
 
 ## 第一次安裝
 
 1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
-2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。由[台灣官方網站](https://tw.nexon.com/mabinogimobile/home/support/download)下載 Nexon Launcher，安裝到該容器。若首次顯示空白或黑屏，先關閉 Nexon，繼續下一步。
-3. 在本專案 Releases 下載 Apple Silicon 版 `MabinogiMobileMac-v0.1.0-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
-4. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`。若有多個容器，選擇裝有台灣版 Nexon Launcher 的那一個。
-5. 使用自己的 Nexon／Facebook 帳號登入。瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」時，允許返回啟動器，再安裝及執行遊戲。
+2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
+3. 安裝結束後，讓官方 Nexon Launcher 完成首次更新。若此時顯示空白或黑屏，先關閉這個容器中的 Nexon，繼續下一步。
+4. 在本專案 Releases 下載 Apple Silicon 版 `MabinogiMobileMac-v0.1.1-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
+5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
+6. 使用自己的 Nexon／Facebook 帳號登入。瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」時，允許返回啟動器，再安裝及執行遊戲。
 
 之後直接開啟 **「瑪奇 Mobile 啟動」**。開機相容設定會自動套用；帳號工作階段到期時，仍需依 Nexon 正常流程重新登入。
 
 如果雙擊 `.command` 沒有執行，開啟終端機輸入 `/bin/bash `（尾端保留空白），將 `install.command` 拖進終端機，再按 Return。安裝包只有 ad-hoc 簽章，尚未取得 Developer ID 簽章或 Apple 公證；若 macOS 阻擋，請先確認檔案來自本儲存庫，再依系統提供的個別 App 開啟方式處理，無須停用整體安全保護。
+
+安裝包在預設 Gatekeeper 設定下的提示尚未完成驗證。
 
 ### 先確認這些條件
 
@@ -37,7 +42,19 @@
 
 TCP 設定會影響整台 Mac。本專案只安裝 `/Library/LaunchDaemons/io.github.kimi7011.mabinogi-mobile-macos.tcp.plist`，由 `root:wheel` 持有、權限 `0644`，直接呼叫系統 `sysctl`，不安裝常駐的特權執行檔。安裝前的數值保存在同一 plist，供移除時還原。
 
-`nxl://` 是 Nexon 共用的 URL scheme。選擇此工具處理該類連結後，連結會送往所選的 CrossOver 容器；使用其他 Nexon 遊戲／容器時請留意處理程式的選擇。
+`nxl://` 是 Nexon 共用的 URL scheme。選擇此工具處理該類連結後，連結會送往所選的 CrossOver 容器；使用其他 Nexon 遊戲／容器時請留意處理程式的選擇。安裝器會記住原本的處理 App；移除時若仍由本工具處理連結，而且原 App 仍存在，便會還原。
+
+### 保留現有入口、安裝另一份
+
+v0.1.1 不會覆蓋原修復版本的入口，遇到同名舊 App 會停止並提示另選位置。可在下載包目錄執行：
+
+```sh
+bash install.command --app-dir "$HOME/Applications/MabinogiMobileMac"
+```
+
+往後開啟該子資料夾內的 App。第一次啟動會讓你選容器，不會因為某個容器叫 `Mabinogi Mobile` 就直接使用它。同一個 macOS 帳號的公開版 App 共用容器選擇；請勿把同一容器當作隔離環境。
+
+若管理員已用其他方式永久設定 TCP buffer，可加上 `--keep-network`。此選項只檢查目前數值至少為 `1000000`，不新增、移除或驗證其他開機項目；第一次安裝的一般使用者請勿使用。移除這種安裝時也須帶相同的 `--app-dir` 與 `--keep-network`，以保留既有網路設定。
 
 ## 移除與還原
 
@@ -79,7 +96,7 @@ bash install.command
 
 **找不到 Nexon Launcher**：本工具辨識 CrossOver 預設 Bottles 目錄內，安裝在 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。自訂容器根目錄或自訂安裝路徑目前未支援。請使用台灣官網提供的安裝器，讓它完成首次更新。
 
-**需要重新選擇容器**：在終端機執行 `defaults delete io.github.kimi7011.mabinogi-mobile-macos BottleName`，再開啟工具。名稱為 `Mabinogi Mobile` 且有效的容器會優先使用。
+**需要重新選擇容器**：先結束 Nexon，再在終端機執行 `open -n "$HOME/Applications/瑪奇 Mobile 啟動.app" --args --choose-bottle`。若裝在其他資料夾，請替換 App 路徑。新的選擇也適用於後續登入回傳。
 
 **仍卡在驗證**：執行 `sysctl net.inet.tcp.sendspace`，確認至少為 `1000000`；本專案使用 `1300000`。再檢查 `launchctl print system/io.github.kimi7011.mabinogi-mobile-macos.tcp`。正常的一次性工作會顯示已結束與 `last exit code = 0`，不需要一直執行中。
 
