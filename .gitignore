@@ -1,0 +1,16 @@
+.DS_Store
+._*
+.build/
+dist/
+*.app/
+*.zip
+*.dmg
+*.log
+*.reg
+*.exe
+*.dll
+*.asar
+*.pyc
+__pycache__/
+*.scpt
+.env*

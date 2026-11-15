@@ -1,0 +1,101 @@
+# 瑪奇 Mobile × macOS / CrossOver
+
+讓台灣版《瑪奇 Mobile》的 Nexon Launcher 在 macOS / CrossOver 下完成登入、下載與啟動的輕量工具。
+
+**[下載 v0.1.0 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/tag/v0.1.0)** · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
+
+這次修復已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。實測日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
+
+## 第一次安裝
+
+1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
+2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。由[台灣官方網站](https://tw.nexon.com/mabinogimobile/home/support/download)下載 Nexon Launcher，安裝到該容器。若首次顯示空白或黑屏，先關閉 Nexon，繼續下一步。
+3. 在本專案 Releases 下載 Apple Silicon 版 `MabinogiMobileMac-v0.1.0-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
+4. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`。若有多個容器，選擇裝有台灣版 Nexon Launcher 的那一個。
+5. 使用自己的 Nexon／Facebook 帳號登入。瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」時，允許返回啟動器，再安裝及執行遊戲。
+
+之後直接開啟 **「瑪奇 Mobile 啟動」**。開機相容設定會自動套用；帳號工作階段到期時，仍需依 Nexon 正常流程重新登入。
+
+如果雙擊 `.command` 沒有執行，開啟終端機輸入 `/bin/bash `（尾端保留空白），將 `install.command` 拖進終端機，再按 Return。安裝包只有 ad-hoc 簽章，尚未取得 Developer ID 簽章或 Apple 公證；若 macOS 阻擋，請先確認檔案來自本儲存庫，再依系統提供的個別 App 開啟方式處理，無須停用整體安全保護。
+
+### 先確認這些條件
+
+- 這個版本針對**台灣版**，遊戲代號為 `59826`，不是韓版的通用啟動器。
+- [官方配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)列出的 PC 儲存空間為 **30 GB 以上**；安裝與更新時請額外預留空間。
+- 實測容器使用圖形「自動」、關閉高解析度模式與 MSync。其他設定組合尚未逐一驗證。
+- 啟動工具的編譯最低目標為 macOS 12；實際遊戲仍需符合所使用 CrossOver 版本的系統需求。
+- 預先建置的安裝包適用於 **Apple Silicon（M 系列）**。**遊戲僅在上述 M1 環境實測**；Intel Mac 沒有預先建置版本，其他 macOS／CrossOver／遊戲版本及長時間遊玩尚未完成驗證。
+
+## 修復內容
+
+| 問題 | 處理方式 |
+| --- | --- |
+| Nexon 登入視窗黑屏或空白 | 傳入 `--disable-blink-features=TextDecoratingBox` 與 `--disable-gpu` |
+| 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
+| 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
+| 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
+
+TCP 設定會影響整台 Mac。本專案只安裝 `/Library/LaunchDaemons/io.github.kimi7011.mabinogi-mobile-macos.tcp.plist`，由 `root:wheel` 持有、權限 `0644`，直接呼叫系統 `sysctl`，不安裝常駐的特權執行檔。安裝前的數值保存在同一 plist，供移除時還原。
+
+`nxl://` 是 Nexon 共用的 URL scheme。選擇此工具處理該類連結後，連結會送往所選的 CrossOver 容器；使用其他 Nexon 遊戲／容器時請留意處理程式的選擇。
+
+## 移除與還原
+
+先正常結束遊戲及 Nexon，再執行同一下載包中的 **`uninstall.command`**。
+
+- 移除本專案的開機項目，並在目前數值仍是本專案設定時還原安裝前數值。如果其他管理員後來改過數值，保留後來的設定。
+- 將本專案的啟動 App 移到垃圾桶。
+- 保留 CrossOver 容器、遊戲、帳號資料及安裝時備份的舊入口。
+
+舊入口備份位於 `~/Library/Application Support/MabinogiMobileMac/backups/`。本版移除工具只管理 `io.github.kimi7011.mabinogi-mobile-macos.tcp`；不會刪除其他專案或手動建立的開機設定。
+
+## 從原始碼建置
+
+原始碼不依賴第三方套件。需要 Apple Command Line Tools：
+
+```sh
+xcode-select --install
+```
+
+下載原始碼後，在專案目錄執行：
+
+```sh
+bash build.sh
+python3 test.py "dist/瑪奇 Mobile 啟動.app"
+bash install.command
+```
+
+`build.sh` 為目前 Mac 的架構建置 App，驗證 ad-hoc 簽章及 URL／參數自我測試。`test.py` 使用暫存資料夾與模擬的系統命令驗證安裝、重複安裝、還原、錯誤處理和防止覆寫無關檔案；不使用 sudo，也不變更實際系統設定。Intel Mac 可自行嘗試從原始碼建置，但本版未驗證其建置或遊戲相容性。
+
+檢查目前環境，不啟動遊戲：
+
+```sh
+"dist/瑪奇 Mobile 啟動.app/Contents/MacOS/NexonBridge" --check
+```
+
+初版封裝已通過 Apple Silicon 編譯、腳本檢查與上述隔離測試。原修復的系統開機項目已成功載入並執行；尚未實際重新開機驗證。編譯／隔離測試不等於在所有電腦完成遊戲實測。
+
+## 常見問題
+
+**找不到 Nexon Launcher**：本工具辨識 CrossOver 預設 Bottles 目錄內，安裝在 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。自訂容器根目錄或自訂安裝路徑目前未支援。請使用台灣官網提供的安裝器，讓它完成首次更新。
+
+**需要重新選擇容器**：在終端機執行 `defaults delete io.github.kimi7011.mabinogi-mobile-macos BottleName`，再開啟工具。名稱為 `Mabinogi Mobile` 且有效的容器會優先使用。
+
+**仍卡在驗證**：執行 `sysctl net.inet.tcp.sendspace`，確認至少為 `1000000`；本專案使用 `1300000`。再檢查 `launchctl print system/io.github.kimi7011.mabinogi-mobile-macos.tcp`。正常的一次性工作會顯示已結束與 `last exit code = 0`，不需要一直執行中。
+
+**更新 Nexon 後不能啟動**：先在原容器執行官方 `nexon_launcher.exe` 完成更新，再使用本工具。新版啟動器可能改變目錄結構或不再需要相同參數，請附上版本及錯誤訊息回報。
+
+回報問題時請提供機型、macOS／CrossOver／Nexon 版本、卡住的步驟及已遮蔽帳號的畫面。不要上傳完整登入網址、token、cookies 或原始帳號日誌。
+
+## 授權與來源
+
+本專案自行撰寫的啟動工具與腳本採用 [MIT 授權](LICENSE)。不封裝 CrossOver、Nexon、遊戲、反作弊程式或任何玩家資料；不修補 `app.asar`、遊戲執行檔或反作弊元件。商標與遊戲內容屬原權利人。
+
+技術參考：
+
+- [ZeroMQ 官方 INSTALL：Windows Builds – Wine](https://github.com/zeromq/libzmq/blob/master/INSTALL)：TCP buffer 的相容建議。
+- [linux-launcher 開發者的疑難排解紀錄](https://github.com/xthddrt/linux-launcher/blob/main/docs/TROUBLESHOOTING.md)：Electron 文字繪製相容參數的參考；未封裝該專案的程式或補丁。
+- [Apple：Creating Launch Daemons and Agents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)：開機服務機制。
+- [瑪奇 Mobile 台灣官方下載與配備](https://tw.nexon.com/mabinogimobile/home/support/download)。
+
+English: A community macOS/CrossOver launcher helper for the Taiwan edition of Mabinogi Mobile. It handles Nexon URL callbacks, applies Electron compatibility flags, and installs a reversible startup TCP-buffer setting. CrossOver and the official Nexon/game installation are required. Tested gameplay startup is limited to the M1 configuration above; no game binaries or account data are distributed.
