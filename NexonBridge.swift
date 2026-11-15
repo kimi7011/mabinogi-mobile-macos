@@ -72,6 +72,11 @@ enum Launcher {
 final class NexonBridge: NSObject, NSApplicationDelegate {
     private var receivedURL = false
     private var jobs: [UUID: Process] = [:]
+    private weak var bottlePickerButton: NSButton?
+
+    @objc private func bottleSelectionChanged(_ sender: NSPopUpButton) {
+        bottlePickerButton?.isEnabled = sender.indexOfSelectedItem > 0
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openURL(_:reply:)),
@@ -112,15 +117,22 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
            let saved = UserDefaults.standard.string(forKey: "BottleName"), names.contains(saved) { return saved }
         guard !names.isEmpty else { return nil }
         let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
-        picker.addItems(withTitles: names)
+        picker.addItems(withTitles: ["請選擇容器…"] + names)
+        picker.menu?.items.first?.isEnabled = false
+        picker.target = self
+        picker.action = #selector(bottleSelectionChanged(_:))
         let alert = NSAlert()
         alert.messageText = "選擇 Nexon Launcher 所在的 CrossOver 容器"
         alert.informativeText = "請選擇已安裝台灣版 Nexon Launcher 的容器。往後的啟動與登入回傳都會使用此容器。"
         alert.accessoryView = picker
-        alert.addButton(withTitle: "使用此容器")
+        let useButton = alert.addButton(withTitle: "使用此容器")
+        useButton.isEnabled = false
+        bottlePickerButton = useButton
         alert.addButton(withTitle: "取消")
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn, let name = picker.titleOfSelectedItem else { return nil }
+        defer { bottlePickerButton = nil }
+        guard alert.runModal() == .alertFirstButtonReturn, let name = picker.titleOfSelectedItem,
+              names.contains(name) else { return nil }
         UserDefaults.standard.set(name, forKey: "BottleName")
         return name
     }
