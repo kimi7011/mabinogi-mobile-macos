@@ -4,7 +4,7 @@ import AppKit
 enum Launcher {
     static let gameURL = "nxl://play/59826"
     static let downloadURL = URL(string: "https://tw.nexon.com/mabinogimobile/home/support/download")!
-    static let flags = ["--disable-blink-features=TextDecoratingBox", "--disable-gpu"]
+    static let flags = ["--disable-blink-features=TextDecoratingBox", "--disable-gpu", "--in-process-gpu"]
     static let bottles = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/CrossOver/Bottles")
 
@@ -138,6 +138,12 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     }
 
     private func prepareHandler(_ completion: @escaping () -> Void) {
+        // An isolated integration harness can deliver the URL to this App
+        // explicitly, without replacing another installed Nexon handler.
+        if CommandLine.arguments.contains("--keep-handler") {
+            completion()
+            return
+        }
         let current = NSWorkspace.shared.urlForApplication(toOpen: URL(string: Launcher.gameURL)!)
         // Gatekeeper may run a downloaded App from an AppTranslocation path.
         // All copies of this tool share the selected bottle in UserDefaults, so

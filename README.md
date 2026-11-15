@@ -35,7 +35,7 @@
 
 | 問題 | 處理方式 |
 | --- | --- |
-| Nexon 登入視窗黑屏或空白 | 傳入 `--disable-blink-features=TextDecoratingBox` 與 `--disable-gpu` |
+| Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
@@ -90,7 +90,11 @@ bash install.command
 "dist/瑪奇 Mobile 啟動.app/Contents/MacOS/NexonBridge" --check
 ```
 
-初版封裝已通過 Apple Silicon 編譯、腳本檢查與上述隔離測試。原修復的系統開機項目已成功載入並執行；尚未實際重新開機驗證。編譯／隔離測試不等於在所有電腦完成遊戲實測。
+初版封裝已通過 Apple Silicon 編譯、腳本檢查與上述隔離測試。原修復的系統開機項目已在 2026-11-16 實際重新開機後執行成功，TCP 數值為 `1300000`；公開版開機項目已完成實際安裝／執行／移除，但尚未在保持安裝的情況下重開機驗證。編譯／隔離測試不等於在所有電腦完成遊戲實測。
+
+同日續測發現，只有 `--disable-gpu` 仍可能沒有獨立 Nexon 視窗。以同一原容器對照啟動，增加 `--in-process-gpu` 後已直接觀察到完整的原生 Facebook 登入頁，並在關閉診斷功能後重測通過。使用者也已確認原容器完成 Facebook 登入並正常啟動遊戲；公開包首次登入仍待完成。
+
+維護者進行隔離測試時，可對 App 執行檔傳入 `--keep-handler`，保留目前的 macOS `nxl://` 處理程式。此模式須由測試器將登入回傳直接交給指定 App，不適用於一般的瀏覽器自動回傳；一般安裝不需要此選項。
 
 ## 常見問題
 
