@@ -33,9 +33,9 @@
 
 - 這個版本針對**台灣版**，遊戲代號為 `59826`，不是韓版的通用啟動器。
 - [官方配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)列出的 PC 儲存空間為 **30 GB 以上**；安裝與更新時請額外預留空間。
-- 實測容器使用圖形「自動」、關閉高解析度模式與 MSync。其他設定組合尚未逐一驗證。
+- 首次安裝與登入實測使用圖形「自動」，並關閉高解析度模式與 MSync。若能進入遊戲但遊玩中閃退，可依[下方說明](#遊玩中換圖或切回遊戲時閃退)改用 DXMT。
 - 啟動工具的編譯最低目標為 macOS 12；實際遊戲仍需符合所使用 CrossOver 版本的系統需求。
-- 預先建置的安裝包適用於 **Apple Silicon（M 系列）**。**遊戲僅在上述 M1 環境實測**；Intel Mac 沒有預先建置版本，其他 macOS／CrossOver／遊戲版本及長時間遊玩尚未完成驗證。
+- 預先建置的安裝包適用於 **Apple Silicon（M 系列）**。首次安裝與登入在上述 M1 環境實測。下方另有 M6 的遊玩穩定性測試。Intel Mac 可嘗試從原始碼建置，相容性仍待驗證。
 
 ## 修復內容
 
@@ -44,6 +44,7 @@
 | Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
 | CrossOver 已安裝 Nexon，但啟動工具找不到外接磁碟上的容器 | 讀取 CrossOver 的容器資料夾設定，使用該資料夾和所選容器名稱啟動 Nexon |
 | 遊戲下載完後，CrossOver 26.3 匯出捷徑時崩潰 | v0.1.3 將容器名稱與資料夾分開傳入 CrossOver，讓遊戲捷徑可對應到正確的容器 |
+| 遊玩中換圖或切回遊戲時閃退 | 在瑪奇的容器將圖形後端改為 [DXMT](#遊玩中換圖或切回遊戲時閃退) |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
@@ -63,6 +64,16 @@ bash install.command --app-dir "$HOME/Applications/MabinogiMobileMac"
 往後開啟該子資料夾內的 App。第一次啟動不預選任何容器，明確選取後才會啟用「使用此容器」，避免誤開既有環境。同一個 macOS 帳號的公開版 App 共用容器選擇；請勿把同一容器當作隔離環境。
 
 若管理員已用其他方式永久設定 TCP buffer，可加上 `--keep-network`。此選項只檢查目前數值至少為 `1000000`，不新增、移除或驗證其他開機項目；第一次安裝的一般使用者請勿使用。移除這種安裝時也須帶相同的 `--app-dir` 與 `--keep-network`，以保留既有網路設定。
+
+## 遊玩中換圖或切回遊戲時閃退
+
+1. 正常結束遊戲，再從 Nexon 啟動器右上角的帳號選單點「離開」。
+2. 在 CrossOver 選取安裝瑪奇的容器。於右側「進階設定 → 圖形」選擇 **DXMT**。
+3. 重新開啟「瑪奇 Mobile 啟動」，用原本會閃退的換圖路線和視窗切換方式重測。這項設定以 CrossOver 容器為單位。[CodeWeavers 圖形設定說明](https://support.codeweavers.com/miscellanous/advanced-settings-in-crossover-mac-26)
+
+2026-11-16 在 Apple M6（16 GB）、macOS 27.0.1、CrossOver 26.3 重現閃退。原設定實際載入 D3DMetal，Wine 紀錄顯示 Nexon 遊戲安全元件 `BlackCall64.aes` 讀取空位址時發生 `0xC0000005`。改為一般視窗模式或單獨停用 MSync，仍各重現一次。
+
+改用 DXMT 後，用原本的無邊框視窗與 MSync 設定持續測試超過一小時，期間未再出現相同閃退。這是單一環境的實測結果。其他環境若重現，回報時請附上 CrossOver 版本、圖形後端、閃退時間和觸發操作。
 
 ## 移除與還原
 
@@ -151,4 +162,4 @@ CX_BOTTLE_PATH="$bottle_folder" \
 - [Apple：Creating Launch Daemons and Agents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)：開機服務機制。
 - [瑪奇 Mobile 台灣官方下載與配備](https://tw.nexon.com/mabinogimobile/home/support/download)。
 
-English: A community macOS/CrossOver launcher helper for the Taiwan edition of Mabinogi Mobile. It handles Nexon URL callbacks, applies Electron compatibility flags, and installs a reversible startup TCP-buffer setting. CrossOver and the official Nexon/game installation are required. Tested gameplay startup is limited to the M1 configuration above; no game binaries or account data are distributed.
+English: A community macOS/CrossOver launcher helper for the Taiwan edition of Mabinogi Mobile. It handles Nexon URL callbacks, applies Electron compatibility flags, and installs a reversible startup TCP-buffer setting. CrossOver and the official Nexon/game installation are required. Initial installation and sign-in were tested on the M1 configuration above. The DXMT workaround for crashes during map changes or window focus switches was tested for over an hour on the M6 configuration listed above. The package distributes only the launcher helper, its scripts, and documentation.
