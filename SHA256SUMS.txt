@@ -1,1 +1,1 @@
-396565e292f9aa3824064c721eb910b3a0d159e41e1dc10d7c844bc3ecf7096b  MabinogiMobileMac-arm64.zip
+26080fc4d028eff94b5f671409e9958db5f1bf9df35ff6069caa5c3dae0bc483  MabinogiMobileMac-arm64.zip
