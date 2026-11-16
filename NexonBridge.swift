@@ -1,12 +1,34 @@
 import AppKit
 
+struct NexonBottle {
+    let directory: URL
+    let programFiles: String
+
+    var name: String { directory.lastPathComponent }
+    var clientDirectory: URL {
+        directory.appendingPathComponent("drive_c/\(programFiles)/Nexon/Nexon Launcher/bin/nexon_client")
+    }
+    var executable: URL { clientDirectory.appendingPathComponent("nexon_client.exe") }
+}
+
 // Taiwan edition. Authentication URLs are passed as one argument and never logged.
 enum Launcher {
     static let gameURL = "nxl://play/59826"
     static let downloadURL = URL(string: "https://tw.nexon.com/mabinogimobile/home/support/download")!
     static let flags = ["--disable-blink-features=TextDecoratingBox", "--disable-gpu", "--in-process-gpu"]
-    static let bottles = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/CrossOver/Bottles")
+    static let crossOverID = "com.codeweavers.CrossOver"
+    static let defaultBottles = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/CrossOver/Bottles", isDirectory: true)
+
+    static func bottleRoot(configuredPath: String?) -> URL {
+        guard let path = configuredPath, path.hasPrefix("/") else { return defaultBottles }
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    }
+
+    static func configuredBottleRoot() -> URL {
+        let path = CFPreferencesCopyAppValue("BottleDir" as CFString, crossOverID as CFString) as? String
+        return bottleRoot(configuredPath: path)
+    }
 
     static func validURL(_ value: String) -> Bool {
         !value.isEmpty && value.utf8.count <= 32_768 &&
@@ -22,35 +44,37 @@ enum Launcher {
 
     static func wineURL() -> URL? {
         let fm = FileManager.default
-        let candidates = [NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.codeweavers.CrossOver"),
+        let candidates = [NSWorkspace.shared.urlForApplication(withBundleIdentifier: crossOverID),
                           URL(fileURLWithPath: "/Applications/CrossOver.app"),
                           fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications/CrossOver.app")]
         return candidates.compactMap { $0?.appendingPathComponent("Contents/SharedSupport/CrossOver/bin/wine") }
             .first { fm.isExecutableFile(atPath: $0.path) }
     }
 
-    static func clientDirectory(_ bottle: String) -> URL? {
-        guard validBottle(bottle) else { return nil }
+    static func nexonBottle(named name: String, in root: URL) -> NexonBottle? {
+        guard validBottle(name) else { return nil }
+        let directory = root.appendingPathComponent(name, isDirectory: true)
         for programFiles in ["Program Files (x86)", "Program Files"] {
-            let directory = bottles.appendingPathComponent(bottle)
-                .appendingPathComponent("drive_c/\(programFiles)/Nexon/Nexon Launcher/bin/nexon_client")
-            if FileManager.default.fileExists(atPath: directory.appendingPathComponent("nexon_client.exe").path) {
-                return directory
+            let bottle = NexonBottle(directory: directory, programFiles: programFiles)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: bottle.executable.path, isDirectory: &isDirectory),
+               !isDirectory.boolValue {
+                return bottle
             }
         }
         return nil
     }
 
-    static func availableBottles() -> [String] {
-        ((try? FileManager.default.contentsOfDirectory(atPath: bottles.path)) ?? [])
-            .filter { clientDirectory($0) != nil }.sorted()
+    static func availableBottles(in root: URL) -> [NexonBottle] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? [])
+            .sorted().compactMap { nexonBottle(named: $0, in: root) }
     }
 
-    static func arguments(bottle: String, directory: URL, url: String) -> [String] {
-        let programFiles = directory.path.contains("/Program Files (x86)/") ? "Program Files (x86)" : "Program Files"
-        return ["--bottle", bottle, "--no-wait", "--debugmsg", "-all", "--workdir", directory.path,
-                directory.appendingPathComponent("nexon_client.exe").path] + flags +
-               ["--nxl=" + url, "C:\\\(programFiles)\\Nexon\\Nexon Launcher\\bin\\front_end"]
+    static func arguments(bottle: NexonBottle, url: String) -> [String] {
+        // CrossOver's CLI can resolve a name against its own default root.
+        return ["--bottle", bottle.directory.path, "--no-wait", "--debugmsg", "-all", "--workdir",
+                bottle.clientDirectory.path, bottle.executable.path] + flags +
+               ["--nxl=" + url, "C:\\\(bottle.programFiles)\\Nexon\\Nexon Launcher\\bin\\front_end"]
     }
 
     static func tcpBuffer() -> Int? {
@@ -111,13 +135,22 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
-    private func selectedBottle() -> String? {
-        let names = Launcher.availableBottles()
-        if !CommandLine.arguments.contains("--choose-bottle"),
-           let saved = UserDefaults.standard.string(forKey: "BottleName"), names.contains(saved) { return saved }
-        guard !names.isEmpty else { return nil }
+    private func selectedBottle(from bottles: [NexonBottle]) -> NexonBottle? {
+        let defaults = UserDefaults.standard
+        if !CommandLine.arguments.contains("--choose-bottle") {
+            let savedPath = defaults.string(forKey: "BottlePath")
+            if let saved = bottles.first(where: { $0.directory.path == savedPath }) { return saved }
+            // Previous versions only searched the default root.
+            if savedPath == nil, let name = defaults.string(forKey: "BottleName"),
+               let saved = bottles.first(where: {
+                   $0.name == name && $0.directory.deletingLastPathComponent().path == Launcher.defaultBottles.path
+               }) {
+                defaults.set(saved.directory.path, forKey: "BottlePath")
+                return saved
+            }
+        }
         let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
-        picker.addItems(withTitles: ["請選擇容器…"] + names)
+        picker.addItems(withTitles: ["請選擇容器…"] + bottles.map(\.name))
         picker.menu?.items.first?.isEnabled = false
         picker.target = self
         picker.action = #selector(bottleSelectionChanged(_:))
@@ -131,10 +164,11 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "取消")
         NSApp.activate(ignoringOtherApps: true)
         defer { bottlePickerButton = nil }
-        guard alert.runModal() == .alertFirstButtonReturn, let name = picker.titleOfSelectedItem,
-              names.contains(name) else { return nil }
-        UserDefaults.standard.set(name, forKey: "BottleName")
-        return name
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let name = picker.titleOfSelectedItem,
+              let bottle = bottles.first(where: { $0.name == name }) else { return nil }
+        defaults.set(bottle.directory.path, forKey: "BottlePath")
+        return bottle
     }
 
     private func prepareHandler(_ completion: @escaping () -> Void) {
@@ -184,28 +218,36 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             fail("需要安裝網路相容設定", "請執行下載包中的 install.command，完成一次管理員驗證。之後開機會自動套用，避免 Nexon 一直停在驗證中。")
             return
         }
-        guard !Launcher.availableBottles().isEmpty else {
-            fail("尚未選定 Nexon Launcher", "請先在 CrossOver 的 Windows 10 64 位元容器安裝台灣官方 Nexon Launcher。建議容器名稱為 Mabinogi Mobile。", download: true)
+        let root = Launcher.configuredBottleRoot()
+        let bottles = Launcher.availableBottles(in: root)
+        guard !bottles.isEmpty else {
+            fail("找不到已安裝的 Nexon Launcher", "請確認 CrossOver 的容器資料夾可存取，並在 Windows 10 64 位元容器完成台灣版 Nexon Launcher 安裝。\n\n容器資料夾\n\(root.path)", download: true)
             return
         }
-        guard let bottle = selectedBottle(), let directory = Launcher.clientDirectory(bottle) else {
+        guard let bottle = selectedBottle(from: bottles) else {
             NSApp.terminate(nil)
             return
         }
-        prepareHandler { self.runClient(wine: wine, bottle: bottle, directory: directory, url: url) }
+        prepareHandler { self.runClient(wine: wine, bottle: bottle, url: url) }
     }
 
-    private func runClient(wine: URL, bottle: String, directory: URL, url: String) {
+    private func runClient(wine: URL, bottle: NexonBottle, url: String) {
         let id = UUID(), task = Process()
         task.executableURL = wine
-        task.arguments = Launcher.arguments(bottle: bottle, directory: directory, url: url)
+        task.arguments = Launcher.arguments(bottle: bottle, url: url)
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
-        task.terminationHandler = { [weak self] _ in
+        task.terminationHandler = { [weak self] finishedTask in
+            let status = finishedTask.terminationStatus
             DispatchQueue.main.async {
-                self?.jobs.removeValue(forKey: id)
+                guard let self else { return }
+                self.jobs.removeValue(forKey: id)
+                if status != 0, self.jobs.isEmpty {
+                    self.fail("CrossOver 無法啟動 Nexon", "請確認容器「\(bottle.name)」和容器所在的磁碟仍可存取，再重新開啟。\n\nCrossOver 結束代碼 \(status)")
+                    return
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    if self?.jobs.isEmpty == true { NSApp.terminate(nil) }
+                    if self.jobs.isEmpty { NSApp.terminate(nil) }
                 }
             }
         }
@@ -255,18 +297,38 @@ if CommandLine.arguments.contains("--self-test") {
     precondition(Launcher.validURL("NXL://example?value=a%20b"))
     precondition(["..", "-x", "a/b", "a\\b", "a\n"].allSatisfy { !Launcher.validBottle($0) })
     let sample = "nxl://example?value=$(touch%20SHOULD_NOT_EXIST)&quote='test'"
-    let directory = URL(fileURLWithPath: "/example/Program Files (x86)/Nexon/Nexon Launcher/bin/nexon_client")
-    let args = Launcher.arguments(bottle: "Bottle with spaces", directory: directory, url: sample)
+    precondition(Launcher.bottleRoot(configuredPath: nil) == Launcher.defaultBottles)
+    precondition(Launcher.bottleRoot(configuredPath: "relative/path") == Launcher.defaultBottles)
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    do {
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        let root = Launcher.bottleRoot(configuredPath: temporary.appendingPathComponent("External SSD/Bottles").path)
+        let bottle = NexonBottle(directory: root.appendingPathComponent("容器 with spaces"), programFiles: "Program Files (x86)")
+        try FileManager.default.createDirectory(at: bottle.clientDirectory, withIntermediateDirectories: true)
+        precondition(Launcher.availableBottles(in: root).isEmpty)
+        try Data().write(to: bottle.executable)
+        let bottles = Launcher.availableBottles(in: root)
+        precondition(bottles.count == 1 && bottles.first?.executable.path == bottle.executable.path)
+        precondition(Launcher.availableBottles(in: temporary.appendingPathComponent("Unmounted")).isEmpty)
+    } catch {
+        fputs("FAIL: could not create a temporary CrossOver bottle fixture\n", stderr)
+        exit(1)
+    }
+    let bottle = NexonBottle(directory: URL(fileURLWithPath: "/example/Bottle with spaces"), programFiles: "Program Files (x86)")
+    let args = Launcher.arguments(bottle: bottle, url: sample)
     precondition(args.contains("--nxl=" + sample))
-    precondition(args[1] == "Bottle with spaces")
+    precondition(args[1] == "/example/Bottle with spaces")
+    precondition(Launcher.flags.allSatisfy(args.contains))
     precondition(args.last == "C:\\Program Files (x86)\\Nexon\\Nexon Launcher\\bin\\front_end")
     precondition(!args.contains("--no-sandbox"))
-    print("PASS: URL validation, bottle validation, argument boundaries, compatibility flags")
+    print("PASS: URL validation, default/custom bottle discovery, argument boundaries, compatibility flags")
     exit(0)
 }
 if CommandLine.arguments.contains("--check") {
     print("CrossOver found: \(Launcher.wineURL() != nil)")
-    print("Nexon bottle found: \(!Launcher.availableBottles().isEmpty)")
+    let root = Launcher.configuredBottleRoot()
+    print("CrossOver bottle folder: \(root.path)")
+    print("Nexon bottle found: \(!Launcher.availableBottles(in: root).isEmpty)")
     print("TCP buffer sufficient: \((Launcher.tcpBuffer() ?? 0) >= 1_000_000)")
     exit(0)
 }

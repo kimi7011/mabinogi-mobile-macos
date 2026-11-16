@@ -18,9 +18,9 @@
 
 1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
 2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
-3. 安裝結束後，讓官方 Nexon Launcher 完成首次更新。若此時顯示空白或黑屏，先關閉這個容器中的 Nexon，繼續下一步。
+3. 安裝結束後，讓首次更新完成，再正常結束 Nexon Launcher。若更新完成後沒有登入視窗，或視窗是空白／黑屏，在 CrossOver 選取剛建立的容器，使用「結束所有應用程式」關閉留在背景的 Nexon。接著直接進行下一步，登入視窗會由本專案的啟動工具開啟。
 4. 使用上方連結下載 Apple Silicon 安裝包 `MabinogiMobileMac-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
-5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
+5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若容器位於外接磁碟，請先掛載磁碟。macOS 首次詢問是否允許「瑪奇 Mobile 啟動」存取卸除式卷宗時，允許後才會顯示容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
 6. 使用自己的 Nexon／Facebook 帳號登入。切回 Nexon 完成可能出現的電子郵件「帳戶驗證」，再安裝及執行遊戲。若瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」，允許返回啟動器；目前台灣版 Facebook 流程也可能由 Nexon 在背景取回登入結果，不一定出現此提示。
 
 之後直接開啟 **「瑪奇 Mobile 啟動」**。開機相容設定會自動套用。若希望保留登入狀態，完成 Facebook 登入後，請點 Nexon 右上角帳號選單 → **啟動器設定 → 一般 → 安全性 → 自動登入**，勾選後按「完成」。本次實測中，只有登入頁的「開啟自動登入功能」並未讓 Facebook 登入後的啟動器設定同步啟用，因此請在登入後確認這個選項。結束時使用帳號選單的「離開」，不要選「登出」或強制結束。未啟用或帳號工作階段到期時，仍需完成官方登入流程。
@@ -42,6 +42,7 @@
 | 問題 | 處理方式 |
 | --- | --- |
 | Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
+| CrossOver 已安裝 Nexon，但啟動工具找不到外接磁碟上的容器 | 讀取 CrossOver 的容器資料夾設定，使用所選容器的完整路徑啟動 Nexon |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
@@ -104,7 +105,9 @@ bash install.command
 
 ## 常見問題
 
-**找不到 Nexon Launcher**：本工具辨識 CrossOver 預設 Bottles 目錄內，安裝在 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。自訂容器根目錄或自訂安裝路徑目前未支援。請使用台灣官網提供的安裝器，讓它完成首次更新。
+**找不到 Nexon Launcher**。請確認 CrossOver 設定的容器資料夾及外接磁碟可存取。如果先前拒絕外接磁碟存取，請到 macOS「系統設定 → 隱私權與安全性 → 檔案與檔案夾」檢查「瑪奇 Mobile 啟動」的卸除式卷宗權限，再重新開啟工具。錯誤視窗會顯示正在查找的容器資料夾。使用台灣官網提供的安裝器，讓它完成首次更新。本工具辨識安裝於 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。CrossOver 可透過「設定 → 系統整合」變更容器位置。 [CodeWeavers 說明](https://support.codeweavers.com/en_US/common-actions/change-the-bottle-directory-in-crossover-mac)
+
+**剛安裝完 Nexon，卻沒有登入畫面**。先確認官方安裝和更新已完成。若 Nexon 還留在背景，請只對剛安裝 Nexon 的容器執行「結束所有應用程式」，再開啟「瑪奇 Mobile 啟動」。同一個 Nexon 程序若仍在執行，可能會沿用原本的啟動參數。如果正在玩遊戲，請先正常離開遊戲。
 
 **需要重新選擇容器**：先結束 Nexon，再在終端機執行 `open -n "$HOME/Applications/瑪奇 Mobile 啟動.app" --args --choose-bottle`。若裝在其他資料夾，請替換 App 路徑。新的選擇也適用於後續登入回傳。
 
