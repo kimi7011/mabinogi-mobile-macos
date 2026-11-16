@@ -12,6 +12,88 @@ struct NexonBottle {
     var executable: URL { clientDirectory.appendingPathComponent("nexon_client.exe") }
 }
 
+enum BottleGraphics {
+    private static let sectionHeader = try! NSRegularExpression(pattern: #"^\[(.*)\][ \t]*(?:;[^\]]*)?$"#)
+    private static let backendSetting = try! NSRegularExpression(
+        pattern: #"^([ \t]*)(?:"CX_GRAPHICS_BACKEND"|CX_GRAPHICS_BACKEND)[ \t]*=[ \t]*(?:"(?:[^"\\]|\\.)*"([ \t]*;.*)?[ \t]*|.*)$"#,
+        options: .caseInsensitive
+    )
+    private static let dxmtSetting = #""CX_GRAPHICS_BACKEND" = "dxmt""#
+
+    static func supportsDXMT(wine: URL) -> Bool {
+#if arch(arm64)
+        guard #available(macOS 14, *) else { return false }
+        let root = wine.deletingLastPathComponent().deletingLastPathComponent()
+        return ["lib", "lib64"].contains { path in
+            let dxmt = root.appendingPathComponent("\(path)/dxmt", isDirectory: true)
+            return ["x86_64-windows/d3d11.dll", "x86_64-windows/dxgi.dll", "x86_64-unix/winemetal.so"].allSatisfy {
+                FileManager.default.isReadableFile(atPath: dxmt.appendingPathComponent($0).path)
+            }
+        }
+#else
+        return false
+#endif
+    }
+
+    static func configurationSelectingDXMT(_ source: String) -> String {
+        var inEnvironment = false
+        var environmentEnd: String.Index?
+        var foundBackend = false
+        var edits: [(range: NSRange, value: String)] = []
+        source.enumerateSubstrings(in: source.startIndex..<source.endIndex, options: .byLines) { text, range, lineRange, _ in
+            guard let text else { return }
+            let line = text.trimmingCharacters(in: .whitespaces)
+            if let header = sectionHeader.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) {
+                inEnvironment = (line as NSString).substring(with: header.range(at: 1)).lowercased() == "environmentvariables"
+            }
+            guard inEnvironment else { return }
+            environmentEnd = lineRange.upperBound
+            guard let entry = backendSetting.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) else { return }
+            foundBackend = true
+            let original = text as NSString
+            let comment = entry.range(at: 2)
+            let value = original.substring(with: entry.range(at: 1)) + dxmtSetting +
+                (comment.location == NSNotFound ? "" : original.substring(with: comment))
+            if value != text { edits.append((NSRange(range, in: source), value)) }
+        }
+
+        if foundBackend {
+            guard !edits.isEmpty else { return source }
+            let updated = NSMutableString(string: source)
+            for edit in edits.reversed() { updated.replaceCharacters(in: edit.range, with: edit.value) }
+            return updated as String
+        }
+
+        let newline = source.contains("\r\n") ? "\r\n" : "\n"
+        let insertion = environmentEnd ?? source.endIndex
+        let before = source[..<insertion]
+        let separator = before.isEmpty || before.utf8.last == 10 ? "" : newline
+        let header = environmentEnd == nil ? "[EnvironmentVariables]" + newline : ""
+        return before + separator + header + dxmtSetting + newline + source[insertion...]
+    }
+
+    static func applyDXMT(to bottle: NexonBottle) throws {
+        let file = bottle.directory.appendingPathComponent("cxbottle.conf")
+        let resource = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+        guard resource.isRegularFile == true, resource.isSymbolicLink != true else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
+
+        // Re-read if CrossOver saved changes while we were preparing the update.
+        for _ in 0..<2 {
+            let original = try Data(contentsOf: file)
+            guard let source = String(data: original, encoding: .utf8) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
+            let updated = Data(configurationSelectingDXMT(source).utf8)
+            guard updated != original else { return }
+            guard FileManager.default.isWritableFile(atPath: file.path) else { throw CocoaError(.fileWriteNoPermission) }
+            guard try Data(contentsOf: file) == original else { continue }
+            try updated.write(to: file, options: .atomic)
+            return
+        }
+        throw CocoaError(.fileWriteUnknown)
+    }
+}
+
 // Taiwan edition. Authentication URLs are passed as one argument and never logged.
 enum Launcher {
     static let gameURL = "nxl://play/59826"
@@ -76,6 +158,13 @@ enum Launcher {
         return ["--bottle", bottle.name, "--scope", "private", "--no-wait", "--debugmsg", "-all", "--workdir",
                 bottle.clientDirectory.path, bottle.executable.path] + flags +
                ["--nxl=" + url, "C:\\\(bottle.programFiles)\\Nexon\\Nexon Launcher\\bin\\front_end"]
+    }
+
+    static func configureGraphics(wine: URL, bottle: NexonBottle, url: String) throws {
+        guard let link = URL(string: url), link.scheme?.lowercased() == "nxl",
+              link.host?.lowercased() == "play", link.path == "/59826",
+              BottleGraphics.supportsDXMT(wine: wine) else { return }
+        try BottleGraphics.applyDXMT(to: bottle)
     }
 
     static func environment(bottle: NexonBottle, inherited: [String: String]) -> [String: String] {
@@ -164,7 +253,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
         picker.action = #selector(bottleSelectionChanged(_:))
         let alert = NSAlert()
         alert.messageText = "選擇 Nexon Launcher 所在的 CrossOver 容器"
-        alert.informativeText = "請選擇已安裝台灣版 Nexon Launcher 的容器。往後的啟動與登入回傳都會使用此容器。"
+        alert.informativeText = "請選擇用於瑪奇 Mobile、已安裝台灣版 Nexon Launcher 的容器。往後的啟動、圖形設定與登入回傳都會使用此容器。"
         alert.accessoryView = picker
         let useButton = alert.addButton(withTitle: "使用此容器")
         useButton.isEnabled = false
@@ -244,6 +333,12 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     }
 
     private func runClient(wine: URL, bottle: NexonBottle, url: String) {
+        do {
+            try Launcher.configureGraphics(wine: wine, bottle: bottle, url: url)
+        } catch {
+            fail("無法自動套用 DXMT", "請確認容器「\(bottle.name)」的 cxbottle.conf 可寫入，再重新開啟。若選錯容器，請用 --choose-bottle 重新選擇。\n\n\(error.localizedDescription)")
+            return
+        }
         let id = UUID(), task = Process()
         task.executableURL = wine
         task.arguments = Launcher.arguments(bottle: bottle, url: url)
@@ -302,7 +397,7 @@ if CommandLine.arguments.contains("--restore-handler") {
     exit(0)
 }
 
-// A local test path: it does not open Nexon, change settings, or handle real credentials.
+// A local test path that only modifies temporary fixtures.
 if CommandLine.arguments.contains("--self-test") {
     let invalid = ["", "https://example.com", "nxl://play/1\n", "nxl://play/1\t", "nxl://play/1\u{7f}", "nxl:" + String(repeating: "a", count: 32_768)]
     precondition(invalid.allSatisfy { !Launcher.validURL($0) })
@@ -323,8 +418,65 @@ if CommandLine.arguments.contains("--self-test") {
         let bottles = Launcher.availableBottles(in: root)
         precondition(bottles.count == 1 && bottles.first?.executable.path == bottle.executable.path)
         precondition(Launcher.availableBottles(in: temporary.appendingPathComponent("Unmounted")).isEmpty)
+        let config = bottle.directory.appendingPathComponent("cxbottle.conf")
+        let otherBottle = root.appendingPathComponent("另一個容器", isDirectory: true)
+        try FileManager.default.createDirectory(at: otherBottle, withIntermediateDirectories: true)
+        let otherConfig = otherBottle.appendingPathComponent("cxbottle.conf")
+        let original = Data("[Bottle]\r\n\"Description\" = \"遊戲\"\r\n\"CX_GRAPHICS_BACKEND\" = \"outside\"\r\n[environmentvariables] ; comment\r\n\"WINEMSYNC\" = \"1\"\r\n\"cx_graphics_backend\" = \"d3dmetal\" ; manual choice\r\n".utf8)
+        let expected = Data("[Bottle]\r\n\"Description\" = \"遊戲\"\r\n\"CX_GRAPHICS_BACKEND\" = \"outside\"\r\n[environmentvariables] ; comment\r\n\"WINEMSYNC\" = \"1\"\r\n\"CX_GRAPHICS_BACKEND\" = \"dxmt\" ; manual choice\r\n".utf8)
+        try original.write(to: config)
+        try original.write(to: otherConfig)
+        try FileManager.default.setAttributes([.posixPermissions: 0o640], ofItemAtPath: config.path)
+
+        let fixtureCrossOver = temporary.appendingPathComponent("CrossOver.app/Contents/SharedSupport/CrossOver")
+        let fixtureWine = fixtureCrossOver.appendingPathComponent("bin/wine")
+        try Launcher.configureGraphics(wine: fixtureWine, bottle: bottle, url: Launcher.gameURL)
+        let withoutDriver = try Data(contentsOf: config)
+        precondition(withoutDriver == original)
+
+        let driver = fixtureCrossOver.appendingPathComponent("lib/dxmt")
+        for relativePath in ["x86_64-windows/d3d11.dll", "x86_64-windows/dxgi.dll", "x86_64-unix/winemetal.so"] {
+            let file = driver.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data().write(to: file)
+        }
+        try Launcher.configureGraphics(wine: fixtureWine, bottle: bottle, url: "nxl://login/callback")
+        try Launcher.configureGraphics(wine: fixtureWine, bottle: bottle, url: "nxl://play/12345")
+        let afterCallbacks = try Data(contentsOf: config)
+        precondition(afterCallbacks == original)
+
+        if BottleGraphics.supportsDXMT(wine: fixtureWine) {
+            try Launcher.configureGraphics(wine: fixtureWine, bottle: bottle, url: "NXL://play/59826")
+        } else {
+            try BottleGraphics.applyDXMT(to: bottle)
+        }
+        let saved = try Data(contentsOf: config)
+        let untouched = try Data(contentsOf: otherConfig)
+        let attributes = try FileManager.default.attributesOfItem(atPath: config.path)
+        precondition(saved == expected && untouched == original)
+        precondition(attributes[.posixPermissions] as? Int == 0o640)
+        try BottleGraphics.applyDXMT(to: bottle)
+        let secondWrite = try FileManager.default.attributesOfItem(atPath: config.path)
+        precondition(secondWrite[.systemFileNumber] as? NSNumber == attributes[.systemFileNumber] as? NSNumber)
+
+        let missingSection = "[Bottle]\n\"Template\" = \"win10_64\""
+        precondition(BottleGraphics.configurationSelectingDXMT(missingSection) ==
+            missingSection + "\n[EnvironmentVariables]\n\"CX_GRAPHICS_BACKEND\" = \"dxmt\"\n")
+        let missingKey = "[EnvironmentVariables]\n;\"CX_GRAPHICS_BACKEND\" = \"auto\"\n[Other]\n"
+        precondition(BottleGraphics.configurationSelectingDXMT(missingKey) ==
+            "[EnvironmentVariables]\n;\"CX_GRAPHICS_BACKEND\" = \"auto\"\n\"CX_GRAPHICS_BACKEND\" = \"dxmt\"\n[Other]\n")
+
+        try FileManager.default.removeItem(at: config)
+        try FileManager.default.createSymbolicLink(at: config, withDestinationURL: otherConfig)
+        do {
+            try BottleGraphics.applyDXMT(to: bottle)
+            preconditionFailure("DXMT must not modify a linked configuration")
+        } catch {
+            let linkedTarget = try Data(contentsOf: otherConfig)
+            precondition(linkedTarget == original)
+        }
     } catch {
-        fputs("FAIL: could not create a temporary CrossOver bottle fixture\n", stderr)
+        fputs("FAIL: CrossOver bottle or DXMT configuration fixture\n", stderr)
         exit(1)
     }
     let bottle = NexonBottle(directory: URL(fileURLWithPath: "/example/External SSD/Bottle with spaces"), programFiles: "Program Files (x86)")
@@ -337,11 +489,13 @@ if CommandLine.arguments.contains("--self-test") {
     precondition(Launcher.flags.allSatisfy(args.contains))
     precondition(args.last == "C:\\Program Files (x86)\\Nexon\\Nexon Launcher\\bin\\front_end")
     precondition(!args.contains("--no-sandbox"))
-    print("PASS: URL validation, default/custom bottle discovery and name-based launch, argument boundaries, compatibility flags")
+    print("PASS: URL validation, default/custom bottle discovery and name-based launch, argument boundaries, compatibility flags, automatic DXMT configuration")
     exit(0)
 }
 if CommandLine.arguments.contains("--check") {
-    print("CrossOver found: \(Launcher.wineURL() != nil)")
+    let wine = Launcher.wineURL()
+    print("CrossOver found: \(wine != nil)")
+    print("DXMT available: \(wine.map(BottleGraphics.supportsDXMT(wine:)) ?? false)")
     let root = Launcher.configuredBottleRoot()
     print("CrossOver bottle folder: \(root.path)")
     print("Nexon bottle found: \(!Launcher.availableBottles(in: root).isEmpty)")

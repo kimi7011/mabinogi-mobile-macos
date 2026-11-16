@@ -14,10 +14,12 @@
 
 安裝包固定使用相同檔名；後續修正直接更新此檔案與說明。
 
+**v0.1.4** 在支援 DXMT 的環境中，從本工具啟動台灣版瑪奇時，會自動把選定容器的圖形後端設為 DXMT。
+
 ## 第一次安裝
 
 1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
-2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
+2. 在 CrossOver 為瑪奇建立專用的 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
 3. 安裝結束後，讓首次更新完成，再正常結束 Nexon Launcher。若更新完成後沒有登入視窗，或視窗是空白／黑屏，在 CrossOver 選取剛建立的容器，使用「結束所有應用程式」關閉留在背景的 Nexon。接著直接進行下一步，登入視窗會由本專案的啟動工具開啟。
 4. 使用上方連結下載 Apple Silicon 安裝包 `MabinogiMobileMac-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
 5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若容器位於外接磁碟，請先掛載磁碟。macOS 首次詢問是否允許「瑪奇 Mobile 啟動」存取卸除式卷宗時，允許後才會顯示容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
@@ -33,7 +35,7 @@
 
 - 這個版本針對**台灣版**，遊戲代號為 `59826`，不是韓版的通用啟動器。
 - [官方配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)列出的 PC 儲存空間為 **30 GB 以上**；安裝與更新時請額外預留空間。
-- 首次安裝與登入實測使用圖形「自動」，並關閉高解析度模式與 MSync。若能進入遊戲但遊玩中閃退，可依[下方說明](#遊玩中換圖或切回遊戲時閃退)改用 DXMT。
+- 首次安裝與登入實測使用圖形「自動」，並關閉高解析度模式與 MSync。v0.1.4 的自動 DXMT 設定需要 Apple Silicon、macOS 14 以上，以及含 DXMT 的 CrossOver。
 - 啟動工具的編譯最低目標為 macOS 12；實際遊戲仍需符合所使用 CrossOver 版本的系統需求。
 - 預先建置的安裝包適用於 **Apple Silicon（M 系列）**。首次安裝與登入在上述 M1 環境實測。下方另有 M6 的遊玩穩定性測試。Intel Mac 可嘗試從原始碼建置，相容性仍待驗證。
 
@@ -44,7 +46,7 @@
 | Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
 | CrossOver 已安裝 Nexon，但啟動工具找不到外接磁碟上的容器 | 讀取 CrossOver 的容器資料夾設定，使用該資料夾和所選容器名稱啟動 Nexon |
 | 遊戲下載完後，CrossOver 26.3 匯出捷徑時崩潰 | v0.1.3 將容器名稱與資料夾分開傳入 CrossOver，讓遊戲捷徑可對應到正確的容器 |
-| 遊玩中換圖或切回遊戲時閃退 | 在瑪奇的容器將圖形後端改為 [DXMT](#遊玩中換圖或切回遊戲時閃退) |
+| 遊玩中換圖或切回遊戲時閃退 | v0.1.4 在啟動台灣版瑪奇前，為選定容器自動套用 [DXMT](#遊玩中換圖或切回遊戲時閃退) |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
@@ -67,9 +69,9 @@ bash install.command --app-dir "$HOME/Applications/MabinogiMobileMac"
 
 ## 遊玩中換圖或切回遊戲時閃退
 
-1. 正常結束遊戲，再從 Nexon 啟動器右上角的帳號選單點「離開」。
-2. 在 CrossOver 選取安裝瑪奇的容器。於右側「進階設定 → 圖形」選擇 **DXMT**。
-3. 重新開啟「瑪奇 Mobile 啟動」，用原本會閃退的換圖路線和視窗切換方式重測。這項設定以 CrossOver 容器為單位。[CodeWeavers 圖形設定說明](https://support.codeweavers.com/miscellanous/advanced-settings-in-crossover-mac-26)
+更新至 v0.1.4 後，正常結束遊戲，並從 Nexon 帳號選單點「離開」。重新開啟「瑪奇 Mobile 啟動」，工具會在啟動台灣版瑪奇之前為選定容器套用 **DXMT**。已在執行中的遊戲會在重新啟動後讀取新設定。
+
+DXMT 是容器層級的圖形設定。請使用瑪奇專用容器。啟動工具在 Apple Silicon、macOS 14 以上且找得到 CrossOver 隨附的 DXMT 模組時才自動套用。若仍使用較舊的啟動工具，可在 CrossOver 的「進階設定 → 圖形」選擇 DXMT。[CodeWeavers 圖形設定說明](https://support.codeweavers.com/miscellanous/advanced-settings-in-crossover-mac-26) [DXMT 系統需求](https://github.com/3Shain/dxmt/wiki/Device-System-Runtime-Specifications)
 
 2026-11-16 在 Apple M6（16 GB）、macOS 27.0.1、CrossOver 26.3 重現閃退。原設定實際載入 D3DMetal，Wine 紀錄顯示 Nexon 遊戲安全元件 `BlackCall64.aes` 讀取空位址時發生 `0xC0000005`。改為一般視窗模式或單獨停用 MSync，仍各重現一次。
 
@@ -101,7 +103,7 @@ python3 test.py "dist/瑪奇 Mobile 啟動.app"
 bash install.command
 ```
 
-`build.sh` 為目前 Mac 的架構建置 App，驗證 ad-hoc 簽章及 URL／參數自我測試。`test.py` 使用暫存資料夾與模擬的系統命令驗證安裝、重複安裝、還原、錯誤處理和防止覆寫無關檔案；不使用 sudo，也不變更實際系統設定。Intel Mac 可自行嘗試從原始碼建置，但本版未驗證其建置或遊戲相容性。
+`build.sh` 為目前 Mac 的架構建置 App，驗證 ad-hoc 簽章以及 URL、參數與 DXMT 設定的自我測試。`test.py` 使用暫存資料夾與模擬的系統命令驗證安裝、重複安裝、還原、錯誤處理和防止覆寫無關檔案；不使用 sudo，也不變更實際系統設定。Intel Mac 可自行嘗試從原始碼建置，但本版未驗證其建置或遊戲相容性。
 
 檢查目前環境，不啟動遊戲：
 
@@ -162,4 +164,4 @@ CX_BOTTLE_PATH="$bottle_folder" \
 - [Apple：Creating Launch Daemons and Agents](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)：開機服務機制。
 - [瑪奇 Mobile 台灣官方下載與配備](https://tw.nexon.com/mabinogimobile/home/support/download)。
 
-English: A community macOS/CrossOver launcher helper for the Taiwan edition of Mabinogi Mobile. It handles Nexon URL callbacks, applies Electron compatibility flags, and installs a reversible startup TCP-buffer setting. CrossOver and the official Nexon/game installation are required. Initial installation and sign-in were tested on the M1 configuration above. The DXMT workaround for crashes during map changes or window focus switches was tested for over an hour on the M6 configuration listed above. The package distributes only the launcher helper, its scripts, and documentation.
+English: A community macOS/CrossOver launcher helper for the Taiwan edition of Mabinogi Mobile. It handles Nexon URL callbacks, applies Electron compatibility flags, and installs a reversible startup TCP-buffer setting. CrossOver and the official Nexon/game installation are required. Initial installation and sign-in were tested on the M1 configuration above. Version 0.1.4 automatically selects DXMT for the chosen bottle when launching the Taiwan game on supported setups. The workaround for in-game crashes was tested for over an hour on the M6 configuration listed above. The package distributes only the launcher helper, its scripts, and documentation.
