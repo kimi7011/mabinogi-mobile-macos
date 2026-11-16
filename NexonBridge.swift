@@ -4,7 +4,7 @@ import AppKit
 enum Launcher {
     static let gameURL = "nxl://play/59826"
     static let downloadURL = URL(string: "https://tw.nexon.com/mabinogimobile/home/support/download")!
-    static let flags = ["--disable-blink-features=TextDecoratingBox", "--disable-gpu"]
+    static let flags = ["--disable-blink-features=TextDecoratingBox", "--disable-gpu", "--in-process-gpu"]
     static let bottles = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/CrossOver/Bottles")
 
@@ -72,6 +72,11 @@ enum Launcher {
 final class NexonBridge: NSObject, NSApplicationDelegate {
     private var receivedURL = false
     private var jobs: [UUID: Process] = [:]
+    private weak var bottlePickerButton: NSButton?
+
+    @objc private func bottleSelectionChanged(_ sender: NSPopUpButton) {
+        bottlePickerButton?.isEnabled = sender.indexOfSelectedItem > 0
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openURL(_:reply:)),
@@ -108,21 +113,66 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
 
     private func selectedBottle() -> String? {
         let names = Launcher.availableBottles()
-        if let saved = UserDefaults.standard.string(forKey: "BottleName"), names.contains(saved) { return saved }
-        if names.contains("Mabinogi Mobile") { return "Mabinogi Mobile" }
+        if !CommandLine.arguments.contains("--choose-bottle"),
+           let saved = UserDefaults.standard.string(forKey: "BottleName"), names.contains(saved) { return saved }
         guard !names.isEmpty else { return nil }
         let picker = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 26))
-        picker.addItems(withTitles: names)
+        picker.addItems(withTitles: ["請選擇容器…"] + names)
+        picker.menu?.items.first?.isEnabled = false
+        picker.target = self
+        picker.action = #selector(bottleSelectionChanged(_:))
         let alert = NSAlert()
         alert.messageText = "選擇 Nexon Launcher 所在的 CrossOver 容器"
-        alert.informativeText = "請選擇已安裝台灣版 Nexon Launcher 的容器。"
+        alert.informativeText = "請選擇已安裝台灣版 Nexon Launcher 的容器。往後的啟動與登入回傳都會使用此容器。"
         alert.accessoryView = picker
-        alert.addButton(withTitle: "使用此容器")
+        let useButton = alert.addButton(withTitle: "使用此容器")
+        useButton.isEnabled = false
+        bottlePickerButton = useButton
         alert.addButton(withTitle: "取消")
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn, let name = picker.titleOfSelectedItem else { return nil }
+        defer { bottlePickerButton = nil }
+        guard alert.runModal() == .alertFirstButtonReturn, let name = picker.titleOfSelectedItem,
+              names.contains(name) else { return nil }
         UserDefaults.standard.set(name, forKey: "BottleName")
         return name
+    }
+
+    private func prepareHandler(_ completion: @escaping () -> Void) {
+        // An isolated integration harness can deliver the URL to this App
+        // explicitly, without replacing another installed Nexon handler.
+        if CommandLine.arguments.contains("--keep-handler") {
+            completion()
+            return
+        }
+        let current = NSWorkspace.shared.urlForApplication(toOpen: URL(string: Launcher.gameURL)!)
+        // Gatekeeper may run a downloaded App from an AppTranslocation path.
+        // All copies of this tool share the selected bottle in UserDefaults, so
+        // an installed handler with our bundle ID already routes to that bottle.
+        let ownID = Bundle.main.bundleIdentifier
+        let handledByThisTool = ownID != nil && current.flatMap { Bundle(url: $0)?.bundleIdentifier } == ownID
+        if current?.standardizedFileURL == Bundle.main.bundleURL.standardizedFileURL || handledByThisTool {
+            completion()
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = "設定 Nexon 登入回傳"
+        alert.informativeText = "將 nxl:// 連結交給此工具，讓 Facebook／Nexon 登入後回到剛才選定的容器。這也會影響其他 Nexon 遊戲的啟動連結；移除工具時可還原原本的處理程式。"
+        alert.addButton(withTitle: "設定並繼續")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { NSApp.terminate(nil); return }
+        NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpenURLsWithScheme: "nxl") { error in
+            DispatchQueue.main.async {
+                guard error == nil else {
+                    self.fail("無法設定登入回傳", "macOS 未允許此工具接收 Nexon 連結。請重新開啟工具，再依系統提示選擇處理程式。")
+                    return
+                }
+                if let current, UserDefaults.standard.string(forKey: "PreviousNXLHandlerPath") == nil {
+                    UserDefaults.standard.set(current.path, forKey: "PreviousNXLHandlerPath")
+                }
+                completion()
+            }
+        }
     }
 
     private func launch(_ url: String) {
@@ -142,6 +192,10 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        prepareHandler { self.runClient(wine: wine, bottle: bottle, directory: directory, url: url) }
+    }
+
+    private func runClient(wine: URL, bottle: String, directory: URL, url: String) {
         let id = UUID(), task = Process()
         task.executableURL = wine
         task.arguments = Launcher.arguments(bottle: bottle, directory: directory, url: url)
@@ -163,6 +217,34 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             fail("無法啟動 Nexon", "請確認 CrossOver 與選定容器內的 Nexon Launcher 仍在原本的位置。")
         }
     }
+}
+
+// Remember before LaunchServices sees the new App, since registration alone may
+// select it when the previous handler was only an implicit system choice.
+if CommandLine.arguments.contains("--remember-handler") {
+    if UserDefaults.standard.string(forKey: "PreviousNXLHandlerPath") == nil,
+       let previous = NSWorkspace.shared.urlForApplication(toOpen: URL(string: Launcher.gameURL)!),
+       Bundle(url: previous)?.bundleIdentifier != Bundle.main.bundleIdentifier {
+        UserDefaults.standard.set(previous.path, forKey: "PreviousNXLHandlerPath")
+    }
+    exit(0)
+}
+if CommandLine.arguments.contains("--restore-handler") {
+    let current = NSWorkspace.shared.urlForApplication(toOpen: URL(string: Launcher.gameURL)!)
+    if let current, Bundle(url: current)?.bundleIdentifier == Bundle.main.bundleIdentifier,
+       let previous = UserDefaults.standard.string(forKey: "PreviousNXLHandlerPath"),
+       FileManager.default.fileExists(atPath: previous) {
+        var finished = false
+        var failed = false
+        NSWorkspace.shared.setDefaultApplication(at: URL(fileURLWithPath: previous), toOpenURLsWithScheme: "nxl") { error in
+            DispatchQueue.main.async { failed = error != nil; finished = true }
+        }
+        while !finished { RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1)) }
+        guard !failed else { fputs("無法還原登入處理程式，已保留 App。\n", stderr); exit(1) }
+        UserDefaults.standard.removeObject(forKey: "PreviousNXLHandlerPath")
+        print("已還原原本的 Nexon 連結處理程式。")
+    }
+    exit(0)
 }
 
 // A local test path: it does not open Nexon, change settings, or handle real credentials.

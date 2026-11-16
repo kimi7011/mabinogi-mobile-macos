@@ -162,12 +162,15 @@ def test_network_script(built_app=None):
             for filename in ("install.command", "uninstall.command"):
                 wrapper = (PROJECT / filename).read_text().replace("$HOME", str(user_root))
                 wrapper = wrapper.replace("/usr/bin/sudo", str(sudo))
+                wrapper = wrapper.replace("/usr/sbin/sysctl", str(root / "sysctl"))
+                wrapper = wrapper.replace('"$source_app/Contents/MacOS/NexonBridge" --remember-handler', ': # URL preference is exercised in the interactive integration test')
+                wrapper = wrapper.replace('"$app/Contents/MacOS/NexonBridge" --restore-handler', ': # Do not change real URL preferences in fixture tests')
                 wrapper = wrapper.replace("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", str(register))
                 (package / filename).write_text(wrapper)
             installed = user_root / "Applications" / app_name
 
-            def wrapper_run(filename, success=True):
-                result = subprocess.run(["/bin/bash", str(package / filename)], text=True, capture_output=True)
+            def wrapper_run(filename, success=True, args=()):
+                result = subprocess.run(["/bin/bash", str(package / filename), *args], text=True, capture_output=True)
                 assert (result.returncode == 0) == success, result.stdout + result.stderr
 
             wrapper_run("install.command")
@@ -188,7 +191,28 @@ def test_network_script(built_app=None):
             assert not plist.exists() and installed.exists()
             wrapper_run("uninstall.command")
             assert installed.exists(), "unrelated App must be preserved"
-            print("PASS: packaged installer, signed App copy, repeated install backup, trash removal, unrelated App protection")
+            metadata["CFBundleIdentifier"] = "local.kimi.mabinogi-crossover-bridge"
+            info.write_bytes(plistlib.dumps(metadata))
+            original_info = info.read_bytes()
+            wrapper_run("install.command", success=False)
+            assert info.read_bytes() == original_info and not plist.exists(), "preserve the original working launcher"
+            alternate = root / "Separate Apps"
+            wrapper_run("install.command", args=("--app-dir", str(alternate)))
+            assert (alternate / app_name).is_dir() and info.read_bytes() == original_info
+            wrapper_run("uninstall.command", args=("--app-dir", str(alternate)))
+            assert not (alternate / app_name).exists() and info.read_bytes() == original_info
+            wrapper_run("install.command", success=False, args=("--app-dir", "relative"))
+            wrapper_run("install.command", success=False, args=("--app-dir", str(alternate), "--keep-network"))
+            assert not (alternate / app_name).exists() and not plist.exists()
+            state = json.loads(state_file.read_text())
+            state["value"] = 1500000
+            state_file.write_text(json.dumps(state))
+            wrapper_run("install.command", args=("--app-dir", str(alternate), "--keep-network"))
+            assert (alternate / app_name).is_dir() and not plist.exists()
+            wrapper_run("uninstall.command", args=("--app-dir", str(alternate), "--keep-network"))
+            assert not (alternate / app_name).exists() and not plist.exists()
+            assert json.loads(state_file.read_text())["value"] == 1500000
+            print("PASS: packaged installer, signed App copy, reinstall, removal, alternate destination, legacy and unrelated App protection")
     print("PASS: install, repeated install, removal, original value, later changes, permissions, symlinks, unrelated files, startup failure recovery")
 
 

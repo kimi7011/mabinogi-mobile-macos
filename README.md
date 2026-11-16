@@ -2,21 +2,32 @@
 
 讓台灣版《瑪奇 Mobile》的 Nexon Launcher 在 macOS / CrossOver 下完成登入、下載與啟動的輕量工具。
 
-**[下載 v0.1.0 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/tag/v0.1.0)** · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
+**[下載安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/raw/refs/heads/main/MabinogiMobileMac-arm64.zip)** · [SHA-256](SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues) · [MIT 授權](LICENSE)
 
-這次修復已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。實測日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
+原先手動修復的環境已在 Apple M1、16 GB 記憶體、macOS 27.2、CrossOver 26.1 上完成 Facebook 登入、官方遊戲下載及啟動；使用者確認到達遊戲登入／伺服器選擇畫面。日期為 2026-11-16。這是社群相容工具，並非 Nexon 或 CodeWeavers 官方的 macOS 版本。
+
+**公開安裝包已完成隔離環境的首次安裝、登入與遊戲啟動實測。** 已實際從 GitHub 下載安裝包並驗證 SHA-256，在全新容器安裝與更新官方 Nexon，完成 Facebook 登入及 Nexon 電子郵件帳戶驗證，再由官方啟動器驗證 APFS 獨立副本中的遊戲資源。使用下載包內的入口後，已直接觀察到 QA 遊戲的伺服器選擇與「開始遊戲」畫面；這次從點入口到建立遊戲程序約 13 秒。遊戲資源未在新容器重新完整下載，因此此項不列為重新下載全部資源的驗證。
+
+**自動登入與重新啟動亦已實測通過。** 在 Nexon 的啟動器設定啟用「自動登入」，以帳號選單「離開」正常結束後，再開下載包的入口；未再次操作 Facebook，約 15 秒後建立遊戲程序，並到達原生遊戲的選服／開始遊戲畫面。這次測試關閉了遠端診斷功能。
+
+下載包也已完成獨立位置安裝、重複安裝與移除；移除後已實測還原原本的登入連結處理程式。公開版網路設定已完成實際管理員安裝、執行及移除。隔離測試期間，原入口、原開機項目、TCP 數值、原容器登錄檔與 1,177 個遊戲檔案均經比對保持不變。
+
+安裝包固定使用相同檔名；後續修正直接更新此檔案與說明。
 
 ## 第一次安裝
 
 1. 安裝並啟用 [CodeWeavers CrossOver](https://www.codeweavers.com/crossover)。本專案不包含 CrossOver 授權。
-2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。由[台灣官方網站](https://tw.nexon.com/mabinogimobile/home/support/download)下載 Nexon Launcher，安裝到該容器。若首次顯示空白或黑屏，先關閉 Nexon，繼續下一步。
-3. 在本專案 Releases 下載 Apple Silicon 版 `MabinogiMobileMac-v0.1.0-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
-4. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`。若有多個容器，選擇裝有台灣版 Nexon Launcher 的那一個。
-5. 使用自己的 Nexon／Facebook 帳號登入。瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」時，允許返回啟動器，再安裝及執行遊戲。
+2. 在 CrossOver 建立 **Windows 10 64 位元**容器，建議命名 **`Mabinogi Mobile`**。下載 [Nexon 官方 Windows 台灣版安裝器](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe&product-id=59826)，在 CrossOver 選擇將它安裝到剛建立的容器。檔名應為 **`NexonLauncherSetup_TW.exe`**；Nexon 首頁可能依 Mac 瀏覽器轉往其他遊戲的 `.pkg`，請勿使用該檔案。官方遊戲資訊見[下載與配備頁](https://tw.nexon.com/mabinogimobile/home/support/download)。
+3. 安裝結束後，讓官方 Nexon Launcher 完成首次更新。若此時顯示空白或黑屏，先關閉這個容器中的 Nexon，繼續下一步。
+4. 使用上方連結下載 Apple Silicon 安裝包 `MabinogiMobileMac-arm64.zip` 並解壓縮，雙擊 **`install.command`**。依終端機提示完成一次 Mac 管理員驗證；輸入密碼時不會顯示字元。預先建置的安裝包不需要 Xcode。
+5. 開啟 `~/Applications/瑪奇 Mobile 啟動.app`，明確選擇剛安裝台灣版 Nexon Launcher 的容器。若出現「設定 Nexon 登入回傳」，選擇「設定並繼續」。
+6. 使用自己的 Nexon／Facebook 帳號登入。切回 Nexon 完成可能出現的電子郵件「帳戶驗證」，再安裝及執行遊戲。若瀏覽器詢問是否開啟「瑪奇 Mobile 啟動」，允許返回啟動器；目前台灣版 Facebook 流程也可能由 Nexon 在背景取回登入結果，不一定出現此提示。
 
-之後直接開啟 **「瑪奇 Mobile 啟動」**。開機相容設定會自動套用；帳號工作階段到期時，仍需依 Nexon 正常流程重新登入。
+之後直接開啟 **「瑪奇 Mobile 啟動」**。開機相容設定會自動套用。若希望保留登入狀態，完成 Facebook 登入後，請點 Nexon 右上角帳號選單 → **啟動器設定 → 一般 → 安全性 → 自動登入**，勾選後按「完成」。本次實測中，只有登入頁的「開啟自動登入功能」並未讓 Facebook 登入後的啟動器設定同步啟用，因此請在登入後確認這個選項。結束時使用帳號選單的「離開」，不要選「登出」或強制結束。未啟用或帳號工作階段到期時，仍需完成官方登入流程。
 
 如果雙擊 `.command` 沒有執行，開啟終端機輸入 `/bin/bash `（尾端保留空白），將 `install.command` 拖進終端機，再按 Return。安裝包只有 ad-hoc 簽章，尚未取得 Developer ID 簽章或 Apple 公證；若 macOS 阻擋，請先確認檔案來自本儲存庫，再依系統提供的個別 App 開啟方式處理，無須停用整體安全保護。
+
+安裝包在預設 Gatekeeper 設定下的提示尚未完成驗證。
 
 ### 先確認這些條件
 
@@ -30,14 +41,26 @@
 
 | 問題 | 處理方式 |
 | --- | --- |
-| Nexon 登入視窗黑屏或空白 | 傳入 `--disable-blink-features=TextDecoratingBox` 與 `--disable-gpu` |
+| Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
 
 TCP 設定會影響整台 Mac。本專案只安裝 `/Library/LaunchDaemons/io.github.kimi7011.mabinogi-mobile-macos.tcp.plist`，由 `root:wheel` 持有、權限 `0644`，直接呼叫系統 `sysctl`，不安裝常駐的特權執行檔。安裝前的數值保存在同一 plist，供移除時還原。
 
-`nxl://` 是 Nexon 共用的 URL scheme。選擇此工具處理該類連結後，連結會送往所選的 CrossOver 容器；使用其他 Nexon 遊戲／容器時請留意處理程式的選擇。
+`nxl://` 是 Nexon 共用的 URL scheme。選擇此工具處理該類連結後，連結會送往所選的 CrossOver 容器；使用其他 Nexon 遊戲／容器時請留意處理程式的選擇。安裝器會記住原本的處理 App；移除時若仍由本工具處理連結，而且原 App 仍存在，便會還原。
+
+### 保留現有入口、安裝另一份
+
+安裝器會保留原修復入口，遇到同名舊 App 會停止並提示另選位置。可在下載包目錄執行：
+
+```sh
+bash install.command --app-dir "$HOME/Applications/MabinogiMobileMac"
+```
+
+往後開啟該子資料夾內的 App。第一次啟動不預選任何容器，明確選取後才會啟用「使用此容器」，避免誤開既有環境。同一個 macOS 帳號的公開版 App 共用容器選擇；請勿把同一容器當作隔離環境。
+
+若管理員已用其他方式永久設定 TCP buffer，可加上 `--keep-network`。此選項只檢查目前數值至少為 `1000000`，不新增、移除或驗證其他開機項目；第一次安裝的一般使用者請勿使用。移除這種安裝時也須帶相同的 `--app-dir` 與 `--keep-network`，以保留既有網路設定。
 
 ## 移除與還原
 
@@ -73,15 +96,27 @@ bash install.command
 "dist/瑪奇 Mobile 啟動.app/Contents/MacOS/NexonBridge" --check
 ```
 
-初版封裝已通過 Apple Silicon 編譯、腳本檢查與上述隔離測試。原修復的系統開機項目已成功載入並執行；尚未實際重新開機驗證。編譯／隔離測試不等於在所有電腦完成遊戲實測。
+初版封裝已通過 Apple Silicon 編譯、腳本檢查與上述隔離測試。原修復的系統開機項目已在 2026-11-16 實際重新開機後執行成功，TCP 數值為 `1300000`；公開版開機項目已完成實際安裝／執行／移除，但尚未在保持安裝的情況下重開機驗證。編譯／隔離測試不等於在所有電腦完成遊戲實測。
+
+同日續測發現，只有 `--disable-gpu` 仍可能沒有獨立 Nexon 視窗。以同一原容器對照啟動，增加 `--in-process-gpu` 後已直接觀察到完整的原生 Facebook 登入頁，並在關閉診斷功能後重測通過。使用者已確認原容器正常遊玩；公開包也已在隔離容器完成 Facebook／信箱驗證與遊戲啟動。
+
+維護者進行隔離測試時，可對 App 執行檔傳入 `--keep-handler`，保留目前的 macOS `nxl://` 處理程式。此模式不會接管一般瀏覽器的 `nxl://` 回傳。此次台灣版 Facebook 流程由啟動器背景輪詢完成，已在保留原處理程式的情況下通過；其他需要 `nxl://` 回傳的登入方式須另以測試器明確送往指定 App。一般安裝不需要此選項。
 
 ## 常見問題
 
 **找不到 Nexon Launcher**：本工具辨識 CrossOver 預設 Bottles 目錄內，安裝在 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。自訂容器根目錄或自訂安裝路徑目前未支援。請使用台灣官網提供的安裝器，讓它完成首次更新。
 
-**需要重新選擇容器**：在終端機執行 `defaults delete io.github.kimi7011.mabinogi-mobile-macos BottleName`，再開啟工具。名稱為 `Mabinogi Mobile` 且有效的容器會優先使用。
+**需要重新選擇容器**：先結束 Nexon，再在終端機執行 `open -n "$HOME/Applications/瑪奇 Mobile 啟動.app" --args --choose-bottle`。若裝在其他資料夾，請替換 App 路徑。新的選擇也適用於後續登入回傳。
 
 **仍卡在驗證**：執行 `sysctl net.inet.tcp.sendspace`，確認至少為 `1000000`；本專案使用 `1300000`。再檢查 `launchctl print system/io.github.kimi7011.mabinogi-mobile-macos.tcp`。正常的一次性工作會顯示已結束與 `last exit code = 0`，不需要一直執行中。
+
+**Facebook 顯示「返回遊戲啟動器」，卻沒有進入遊戲**：先切回獨立的 Nexon 視窗。Facebook 成功頁只代表第三方驗證已完成；新容器可能還要完成 Nexon 的電子郵件「帳戶驗證」。完成後才會進入遊戲頁，首次使用仍需安裝遊戲並按「開始遊戲」。不要反覆重新整理或重開舊的登入完成網址。
+
+**每次重開仍要求 Facebook 登入**：完成一次登入後，在「啟動器設定 → 一般 → 安全性」確認「自動登入」已勾選。登入頁的勾選狀態不能代替這項確認。這會在該容器保留登入狀態；共用電腦請依自己的需要選擇。
+
+點擊啟動後請先等候約 30 秒；本機實測約 13 秒才建立遊戲程序，速度會因電腦與遊戲更新而異。若 Nexon 已顯示遊戲頁的「執行」按鈕，可直接按該按鈕繼續。
+
+若 Nexon 仍停在「請從瀏覽器登入」或等待逾時，按「取消」，從同一個 Nexon 視窗重新按 Facebook，使用這次新開啟的官方登入頁。若 Nexon 只剩頁尾或空白，先正常結束這個 Nexon，再開啟「瑪奇 Mobile 啟動」重新登入。不要在遊戲執行時重啟容器，也不要結束其他容器的程式。本工具不會保存驗證碼、繞過帳戶驗證或無限制重送登入。
 
 **更新 Nexon 後不能啟動**：先在原容器執行官方 `nexon_launcher.exe` 完成更新，再使用本工具。新版啟動器可能改變目錄結構或不再需要相同參數，請附上版本及錯誤訊息回報。
 
