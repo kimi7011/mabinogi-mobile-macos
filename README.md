@@ -42,7 +42,8 @@
 | 問題 | 處理方式 |
 | --- | --- |
 | Nexon 登入視窗黑屏、空白或未顯示 | 傳入 `--disable-blink-features=TextDecoratingBox`、`--disable-gpu` 與 `--in-process-gpu` |
-| CrossOver 已安裝 Nexon，但啟動工具找不到外接磁碟上的容器 | 讀取 CrossOver 的容器資料夾設定，使用所選容器的完整路徑啟動 Nexon |
+| CrossOver 已安裝 Nexon，但啟動工具找不到外接磁碟上的容器 | 讀取 CrossOver 的容器資料夾設定，使用該資料夾和所選容器名稱啟動 Nexon |
+| 遊戲下載完後，CrossOver 26.3 匯出捷徑時崩潰 | v0.1.3 將容器名稱與資料夾分開傳入 CrossOver，讓遊戲捷徑可對應到正確的容器 |
 | 官網啟動或 Facebook 登入後無法返回 CrossOver | 以原生 App 接收 `nxl://`，交給選定容器中的官方 Nexon client |
 | 下載一直卡在「驗證中」 | 依 ZeroMQ 的 Wine/macOS 建議，將 `net.inet.tcp.sendspace` 設為 `1300000` |
 | 每次重開機都要重打指令 | 安裝一次執行即結束的系統 LaunchDaemon，開機時自動套用同一數值 |
@@ -108,6 +109,20 @@ bash install.command
 **找不到 Nexon Launcher**。請確認 CrossOver 設定的容器資料夾及外接磁碟可存取。如果先前拒絕外接磁碟存取，請到 macOS「系統設定 → 隱私權與安全性 → 檔案與檔案夾」檢查「瑪奇 Mobile 啟動」的卸除式卷宗權限，再重新開啟工具。錯誤視窗會顯示正在查找的容器資料夾。使用台灣官網提供的安裝器，讓它完成首次更新。本工具辨識安裝於 `C:\Program Files (x86)\Nexon\Nexon Launcher` 或 `C:\Program Files\Nexon\Nexon Launcher` 的 client。CrossOver 可透過「設定 → 系統整合」變更容器位置。 [CodeWeavers 說明](https://support.codeweavers.com/en_US/common-actions/change-the-bottle-directory-in-crossover-mac)
 
 **剛安裝完 Nexon，卻沒有登入畫面**。先確認官方安裝和更新已完成。若 Nexon 還留在背景，請只對剛安裝 Nexon 的容器執行「結束所有應用程式」，再開啟「瑪奇 Mobile 啟動」。同一個 Nexon 程序若仍在執行，可能會沿用原本的啟動參數。如果正在玩遊戲，請先正常離開遊戲。
+
+**遊戲已下載，但 CrossOver 26.3 出現 `exportProgram`／`updateApplicationFolder` 崩潰**。若曾用 v0.1.2 安裝，先更新至 v0.1.3 並關閉該容器先前啟動的 Nexon。若 CrossOver 仍反覆崩潰，可用 CrossOver 隨附的 `cxmenu` 重建該容器的捷徑，已下載的遊戲可繼續使用。請將 `Mabinogi Mobile` 換成實際容器名稱。如果 CrossOver 安裝在其他位置，請調整程式路徑。
+
+```sh
+bottle_folder="$(defaults read com.codeweavers.CrossOver BottleDir 2>/dev/null || true)"
+if [ -z "$bottle_folder" ]; then
+    bottle_folder="$HOME/Library/Application Support/CrossOver/Bottles"
+fi
+CX_BOTTLE_PATH="$bottle_folder" \
+    "/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/cxmenu" \
+    --scope private --bottle "Mabinogi Mobile" --install
+```
+
+完成後重新開啟 CrossOver，從「瑪奇 Mobile 啟動」進入 Nexon，確認遊戲可繼續使用。
 
 **需要重新選擇容器**：先結束 Nexon，再在終端機執行 `open -n "$HOME/Applications/瑪奇 Mobile 啟動.app" --args --choose-bottle`。若裝在其他資料夾，請替換 App 路徑。新的選擇也適用於後續登入回傳。
 

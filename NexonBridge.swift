@@ -5,6 +5,7 @@ struct NexonBottle {
     let programFiles: String
 
     var name: String { directory.lastPathComponent }
+    var root: URL { directory.deletingLastPathComponent() }
     var clientDirectory: URL {
         directory.appendingPathComponent("drive_c/\(programFiles)/Nexon/Nexon Launcher/bin/nexon_client")
     }
@@ -71,10 +72,17 @@ enum Launcher {
     }
 
     static func arguments(bottle: NexonBottle, url: String) -> [String] {
-        // CrossOver's CLI can resolve a name against its own default root.
-        return ["--bottle", bottle.directory.path, "--no-wait", "--debugmsg", "-all", "--workdir",
+        // CrossOver uses the bottle name again when exporting macOS shortcuts.
+        return ["--bottle", bottle.name, "--scope", "private", "--no-wait", "--debugmsg", "-all", "--workdir",
                 bottle.clientDirectory.path, bottle.executable.path] + flags +
                ["--nxl=" + url, "C:\\\(bottle.programFiles)\\Nexon\\Nexon Launcher\\bin\\front_end"]
+    }
+
+    static func environment(bottle: NexonBottle, inherited: [String: String]) -> [String: String] {
+        var environment = inherited
+        environment["CX_BOTTLE_PATH"] = bottle.root.path
+        environment.removeValue(forKey: "CX_INITIALIZED")
+        return environment
     }
 
     static func tcpBuffer() -> Int? {
@@ -219,6 +227,10 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             return
         }
         let root = Launcher.configuredBottleRoot()
+        guard !root.path.contains(":") else {
+            fail("CrossOver 容器資料夾的路徑含有冒號", "CrossOver 的命令列會把冒號視為資料夾分隔符號。請在 CrossOver 的「系統整合」設定中選擇路徑沒有冒號的容器資料夾。")
+            return
+        }
         let bottles = Launcher.availableBottles(in: root)
         guard !bottles.isEmpty else {
             fail("找不到已安裝的 Nexon Launcher", "請確認 CrossOver 的容器資料夾可存取，並在 Windows 10 64 位元容器完成台灣版 Nexon Launcher 安裝。\n\n容器資料夾\n\(root.path)", download: true)
@@ -235,6 +247,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
         let id = UUID(), task = Process()
         task.executableURL = wine
         task.arguments = Launcher.arguments(bottle: bottle, url: url)
+        task.environment = Launcher.environment(bottle: bottle, inherited: ProcessInfo.processInfo.environment)
         task.standardOutput = FileHandle.nullDevice
         task.standardError = FileHandle.nullDevice
         task.terminationHandler = { [weak self] finishedTask in
@@ -314,14 +327,17 @@ if CommandLine.arguments.contains("--self-test") {
         fputs("FAIL: could not create a temporary CrossOver bottle fixture\n", stderr)
         exit(1)
     }
-    let bottle = NexonBottle(directory: URL(fileURLWithPath: "/example/Bottle with spaces"), programFiles: "Program Files (x86)")
+    let bottle = NexonBottle(directory: URL(fileURLWithPath: "/example/External SSD/Bottle with spaces"), programFiles: "Program Files (x86)")
     let args = Launcher.arguments(bottle: bottle, url: sample)
     precondition(args.contains("--nxl=" + sample))
-    precondition(args[1] == "/example/Bottle with spaces")
+    precondition(Array(args.prefix(4)) == ["--bottle", "Bottle with spaces", "--scope", "private"])
+    let inherited = ["CX_BOTTLE_PATH": "/wrong", "CX_INITIALIZED": "501:Bottle with spaces", "LANG": "en_US.UTF-8"]
+    let environment = Launcher.environment(bottle: bottle, inherited: inherited)
+    precondition(environment == ["CX_BOTTLE_PATH": "/example/External SSD", "LANG": "en_US.UTF-8"])
     precondition(Launcher.flags.allSatisfy(args.contains))
     precondition(args.last == "C:\\Program Files (x86)\\Nexon\\Nexon Launcher\\bin\\front_end")
     precondition(!args.contains("--no-sandbox"))
-    print("PASS: URL validation, default/custom bottle discovery, argument boundaries, compatibility flags")
+    print("PASS: URL validation, default/custom bottle discovery and name-based launch, argument boundaries, compatibility flags")
     exit(0)
 }
 if CommandLine.arguments.contains("--check") {

@@ -1,1 +1,1 @@
-c33de5d3f4061102df5d34c6c2d26004ba15274ca5f431118d01ad86306ce62d  MabinogiMobileMac-arm64.zip
+c26b1127e50cfb5a6b031d9bab0adf95ef0dffd45508380b915f3df9dc23df69  MabinogiMobileMac-arm64.zip
