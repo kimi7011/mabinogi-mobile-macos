@@ -11,6 +11,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
+from zipfile import ZipFile
 
 PROJECT = Path(__file__).resolve().parent
 MOCK = r'''
@@ -149,7 +150,8 @@ def test_network_script(built_app=None):
             package = root / "package"
             package.mkdir()
             app_name = "瑪奇 Mobile 啟動.app"
-            subprocess.run(["/usr/bin/ditto", str(built_app), str(package / app_name)], check=True)
+            payload = package / "launcher-payload.zip"
+            subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(built_app), str(payload)], check=True)
             (package / "network-settings.sh").write_text(source)
             # Redirect only the fixture copy. Never change HOME or register test Apps.
             user_root = root / "user"
@@ -157,7 +159,18 @@ def test_network_script(built_app=None):
             sudo.write_text('#!/bin/sh\nexec "$@"\n')
             sudo.chmod(0o755)
             register = root / "lsregister"
-            register.write_text('#!/bin/sh\nexit 0\n')
+            register.write_text("#!" + sys.executable + "\n" + '''
+import json, pathlib, sys
+root = pathlib.Path(__file__).parent
+action, app = sys.argv[1:]
+assert pathlib.Path(app).is_dir(), (action, app)
+with (root / "registrations.jsonl").open("a") as log:
+    print(json.dumps([action, app]), file=log)
+failure = root / "fail-next-registration"
+if action == "-f" and failure.exists():
+    failure.unlink()
+    sys.exit(1)
+''')
             register.chmod(0o755)
             for filename in ("install.command", "uninstall.command"):
                 wrapper = (PROJECT / filename).read_text().replace("$HOME", str(user_root))
@@ -168,16 +181,63 @@ def test_network_script(built_app=None):
                 wrapper = wrapper.replace("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", str(register))
                 (package / filename).write_text(wrapper)
             installed = user_root / "Applications" / app_name
+            backup_dir = user_root / "Library/Application Support/MabinogiMobileMac/backups"
+            info_path = "Contents/Info.plist"
 
             def wrapper_run(filename, success=True, args=()):
                 result = subprocess.run(["/bin/bash", str(package / filename), *args], text=True, capture_output=True)
                 assert (result.returncode == 0) == success, result.stdout + result.stderr
 
+            def change_app_metadata(app, changes, sign=True):
+                info = app / info_path
+                metadata = plistlib.loads(info.read_bytes())
+                metadata.update(changes)
+                info.write_bytes(plistlib.dumps(metadata))
+                if sign:
+                    subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(app)], check=True, capture_output=True)
+
+            def registered_operations():
+                return [json.loads(line) for line in (root / "registrations.jsonl").read_text().splitlines()]
+
             wrapper_run("install.command")
             assert installed.is_dir() and plist.exists()
+            assert not (package / app_name).exists()
+            assert not list(installed.parent.glob(".mabinogi-install.*"))
+            binary = "Contents/MacOS/NexonBridge"
+            assert (installed / binary).read_bytes() == (built_app / binary).read_bytes()
             subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(installed)], check=True)
+
+            def legacy_backup(name, changes, sign=True):
+                app = backup_dir / name / app_name
+                app.parent.mkdir(parents=True)
+                subprocess.run(["/usr/bin/ditto", str(built_app), str(app)], check=True)
+                change_app_metadata(app, changes, sign)
+                return app
+
+            legacy = legacy_backup("app.legacy", {"CFBundleShortVersionString": "0.1.3"})
+            unrelated = legacy_backup("app.unrelated", {"CFBundleIdentifier": "another.project"})
+            unsigned = legacy_backup("app.unsigned", {"CFBundleShortVersionString": "0.1.2"}, sign=False)
             wrapper_run("install.command")
-            assert list((user_root / "Library/Application Support/MabinogiMobileMac/backups").glob("*/" + app_name))
+            assert not legacy.exists() and unrelated.is_dir() and unsigned.is_dir()
+            archives = list(backup_dir.glob("app.*/*.zip"))
+            assert len(archives) == 2
+            archived_versions = []
+            for archive in archives:
+                with ZipFile(archive) as backup:
+                    [member] = [name for name in backup.namelist() if name.endswith(f"/{info_path}")]
+                    metadata = plistlib.loads(backup.read(member))
+                    archived_versions.append(metadata["CFBundleShortVersionString"])
+            assert "0.1.3" in archived_versions
+            assert registered_operations()[-3:] == [["-u", str(legacy)], ["-u", str(installed)], ["-f", str(installed)]]
+
+            change_app_metadata(installed, {"CFBundleShortVersionString": "0.1.2"})
+            original = (installed / info_path).read_bytes()
+            (root / "fail-next-registration").touch()
+            wrapper_run("install.command", success=False, args=("--keep-network",))
+            assert (installed / info_path).read_bytes() == original, "restore the old launcher after registration fails"
+            assert registered_operations()[-4:] == [["-u", str(installed)], ["-f", str(installed)],
+                                                    ["-u", str(installed)], ["-f", str(installed)]]
+
             wrapper_run("uninstall.command")
             assert not installed.exists() and not plist.exists()
             assert list((user_root / ".Trash").glob("*/" + app_name))
@@ -197,6 +257,12 @@ def test_network_script(built_app=None):
             wrapper_run("install.command", success=False)
             assert info.read_bytes() == original_info and not plist.exists(), "preserve the original working launcher"
             alternate = root / "Separate Apps"
+            payload.rename(package / "launcher-payload.saved")
+            subprocess.run(["/usr/bin/ditto", str(built_app), str(package / app_name)], check=True)
+            payload.write_text("invalid ZIP")
+            wrapper_run("install.command", success=False, args=("--app-dir", str(alternate)))
+            assert not (alternate / app_name).exists(), "a corrupt package must fail before installation"
+            payload.unlink()
             wrapper_run("install.command", args=("--app-dir", str(alternate)))
             assert (alternate / app_name).is_dir() and info.read_bytes() == original_info
             wrapper_run("uninstall.command", args=("--app-dir", str(alternate)))
@@ -212,7 +278,7 @@ def test_network_script(built_app=None):
             wrapper_run("uninstall.command", args=("--app-dir", str(alternate), "--keep-network"))
             assert not (alternate / app_name).exists() and not plist.exists()
             assert json.loads(state_file.read_text())["value"] == 1500000
-            print("PASS: packaged installer, signed App copy, reinstall, removal, alternate destination, legacy and unrelated App protection")
+            print("PASS: packaged installer, ZIP backups, legacy migration, registration rollback, removal, alternate destination, unrelated App protection")
     print("PASS: install, repeated install, removal, original value, later changes, permissions, symlinks, unrelated files, startup failure recovery")
 
 

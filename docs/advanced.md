@@ -5,6 +5,7 @@
 ## 啟動器和容器
 
 - 安裝器預設將 App 放在 `~/Applications/瑪奇 Mobile 啟動.app`。原修復入口若使用另一個 bundle ID，可用下方指令安裝到獨立資料夾。
+- 更新前先離開遊戲與 Nexon Launcher，並在 CrossOver 結束該瑪奇容器內仍在背景執行的程式。更新後請從安裝位置開啟啟動器。
 - 容器位於外接磁碟時，先掛載磁碟。macOS 詢問「卸除式卷宗」存取時，請允許啟動器存取存放容器的磁碟。
 - 此安裝包使用 ad-hoc 簽章。若 macOS 阻擋，確認檔案來自本專案後，依系統提供的個別 App 開啟方式處理。
 - 登入後可在 Nexon「啟動器設定 → 一般 → 安全性」開啟自動登入。之後使用帳號選單的「離開」結束 Nexon，讓相同容器下次讀取既有登入狀態。
@@ -50,7 +51,11 @@ CX_BOTTLE_PATH="$bottle_folder" \
 
 下載若一直停在驗證中，可用 `sysctl net.inet.tcp.sendspace` 確認目前數值。系統啟動項目為 `io.github.kimi7011.mabinogi-mobile-macos.tcp`。
 
-`nxl://` 是 Nexon 共用的登入與啟動連結。選擇此工具作為處理程式後，系統會把連結交給選定的容器。移除工具時，若原處理程式還在，會還原對應。移除工具會保留 CrossOver 容器與遊戲。更新前的 App 備份位於 `~/Library/Application Support/MabinogiMobileMac/backups/`。
+`nxl://` 是 Nexon 共用的登入與啟動連結。選擇此工具作為處理程式後，系統會把連結交給選定的容器。移除工具時，若原處理程式還在，會還原對應。移除工具會保留 CrossOver 容器與遊戲。
+
+安裝器將舊版 App 保存成可還原的 ZIP，放在 `~/Library/Application Support/MabinogiMobileMac/backups/`。同一位置裡可驗證的舊式 App 備份也會改存 ZIP，並從 macOS 的 Nexon 連結處理程式清單取消註冊。回復舊版時請先結束容器內的程式，再解壓縮並以舊版 App 取代現用版本。外接磁碟的權限在更新 App 簽章後可能需要重新確認一次。
+
+平常請從安裝位置開啟啟動器。以前下載包中解出的啟動器副本也可能被 macOS 登記，建議將這些副本封存。
 
 ## 從原始碼建置
 
@@ -63,5 +68,7 @@ python3 test.py "dist/瑪奇 Mobile 啟動.app"
 ```
 
 `build.sh` 會建置並驗證 App 簽章與自我測試。`test.py` 使用暫存資料夾與模擬的系統命令測試安裝、重複安裝、移除和設定保護。`--check` 可查看 CrossOver、容器、TCP buffer 與 DXMT 的可用狀態。
+
+本機建置可用 `MABINOGI_ICON_PATH=/absolute/path/to/icon.icns bash build.sh` 指定自己的圖示。NEXON 的上架圖示可在 [台灣 App Store](https://apps.apple.com/tw/app/id6759030432) 查看。
 
 回報問題時請提供機型、macOS／CrossOver 版本、發生時間與操作。上傳畫面或紀錄前請遮蔽帳號與登入資訊。

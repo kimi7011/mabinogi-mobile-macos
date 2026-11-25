@@ -13,6 +13,12 @@ trap 'rm -rf "$stage"' EXIT
 app="$stage/瑪奇 Mobile 啟動.app"
 mkdir -p "$app/Contents/MacOS" "$stage/module-cache"
 cp "$project_dir/Info.plist" "$app/Contents/Info.plist"
+if [ -n "${MABINOGI_ICON_PATH:-}" ]; then
+    /usr/bin/iconutil -c iconset -o "$stage/CustomIcon.iconset" "$MABINOGI_ICON_PATH"
+    mkdir -p "$app/Contents/Resources"
+    cp "$MABINOGI_ICON_PATH" "$app/Contents/Resources/CustomIcon.icns"
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string CustomIcon.icns' "$app/Contents/Info.plist"
+fi
 arch="$(/usr/bin/uname -m)"
 case "$arch" in arm64|x86_64) ;; *) echo '不支援此處理器架構。' >&2; exit 1 ;; esac
 /usr/bin/xcrun swiftc -swift-version 5 -O -target "${arch}-apple-macosx12.0" \
