@@ -3,19 +3,32 @@ set -euo pipefail
 project_dir="$(cd "$(dirname "$0")" && pwd)"
 target_dir="$HOME/Applications"
 keep_network=false
+no_launch=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-dir)
             [ "$#" -ge 2 ] && [[ "$2" = /* ]] || { echo '--app-dir 需要絕對路徑。' >&2; exit 2; }
             target_dir="$2"; shift 2 ;;
         --keep-network) keep_network=true; shift ;;
-        *) echo 'Usage: bash install.command [--app-dir /absolute/path] [--keep-network]' >&2; exit 2 ;;
+        --no-launch) no_launch=true; shift ;;
+        *) echo '用法：bash 安裝指令 [--app-dir /absolute/path] [--keep-network] [--no-launch]' >&2; exit 2 ;;
     esac
 done
 app_name='瑪奇 Mobile 啟動.app'
 app_id='io.github.kimi7011.mabinogi-mobile-macos'
 backup_dir="$HOME/Library/Application Support/MabinogiMobileMac/backups"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+support_dir="$project_dir"
+modern_package=false
+if [ -e "$project_dir/Support" ] || [ -L "$project_dir/Support" ]; then
+    support_dir="$project_dir/Support"
+    modern_package=true
+    if [ ! -f "$support_dir/launcher-payload.zip" ] || { ! $keep_network && [ ! -f "$support_dir/network-settings.sh" ]; }; then
+        echo '安裝包不完整，請完整解壓縮下載的 ZIP，再從解壓縮後的資料夾執行安裝。' >&2
+        exit 1
+    fi
+fi
+payload="$support_dir/launcher-payload.zip"
 target_app="$target_dir/$app_name"
 mkdir -p "$target_dir"
 if [ -L "$target_app" ]; then echo '目標 App 是符號連結，已保留。' >&2; exit 1; fi
@@ -30,7 +43,6 @@ if [ -e "$target_app" ]; then
 fi
 stage="$(mktemp -d "$target_dir/.mabinogi-install.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-payload="$project_dir/launcher-payload.zip"
 if [ -f "$payload" ]; then
     /usr/bin/ditto -x -k "$payload" "$stage/payload"
     source_app="$stage/payload/$app_name"
@@ -38,7 +50,13 @@ else
     source_app="$project_dir/$app_name"
     if [ ! -d "$source_app" ]; then
         source_app="$project_dir/dist/$app_name"
-        if [ ! -d "$source_app" ]; then /bin/bash "$project_dir/build.sh"; fi
+        if [ ! -d "$source_app" ]; then
+            if [ ! -f "$project_dir/build.sh" ]; then
+                echo '找不到安裝檔，請完整解壓縮下載的 ZIP。' >&2
+                exit 1
+            fi
+            /bin/bash "$project_dir/build.sh"
+        fi
     fi
 fi
 [[ -d "$source_app" && ! -L "$source_app" ]] || { echo '找不到有效的安裝 App。' >&2; exit 1; }
@@ -149,7 +167,7 @@ if $keep_network; then
     echo '保留既有網路設定；本次不新增或修改開機項目。請確保既有設定會在開機後生效。'
 else
     echo '安裝開機相容設定，需要一次管理員驗證。密碼不會顯示或保存。'
-    /usr/bin/sudo /bin/bash "$project_dir/network-settings.sh" install
+    /usr/bin/sudo /bin/bash "$support_dir/network-settings.sh" install
 fi
 archive_legacy_backups
 if [ -e "$target_app" ]; then
@@ -161,8 +179,15 @@ if [ -e "$target_app" ]; then
 fi
 if mv "$staged_app" "$target_app"; then
     if "$lsregister" -f "$target_app"; then
-        echo "安裝完成，請開啟：$target_app"
-        echo '第一次仍需在 CrossOver 安裝官方 Nexon Launcher，登入並下載遊戲。'
+        if $modern_package && ! $no_launch; then
+            echo "安裝完成：$target_app"
+            if ! /usr/bin/open "$target_app"; then
+                echo "無法自動開啟，請手動開啟：$target_app" >&2
+            fi
+        else
+            echo "安裝完成，請開啟：$target_app"
+        fi
+        echo '首次遊玩需在 CrossOver 安裝官方 Nexon Launcher，再登入並下載遊戲。'
         exit 0
     fi
     "$lsregister" -u "$target_app" || true

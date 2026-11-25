@@ -163,8 +163,8 @@ def test_network_script(built_app=None):
             app_name = "瑪奇 Mobile 啟動.app"
             payload = package / "launcher-payload.zip"
 
-            def package_app(app):
-                subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(payload)], check=True)
+            def package_app(app, archive=payload):
+                subprocess.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)], check=True)
 
             package_app(built_app)
             (package / "network-settings.sh").write_text(source)
@@ -221,7 +221,7 @@ import json, pathlib, sys
 root = pathlib.Path(__file__).parent
 action, app = sys.argv[1:]
 assert pathlib.Path(app).is_dir(), (action, app)
-with (root / "registrations.jsonl").open("a") as log:
+with (root / "app-operations.jsonl").open("a") as log:
     print(json.dumps([action, app]), file=log)
 failure = root / "fail-next-registration"
 if action == "-f" and failure.exists():
@@ -229,11 +229,24 @@ if action == "-f" and failure.exists():
     sys.exit(1)
 ''')
             register.chmod(0o755)
+            opener = root / "open"
+            opener.write_text("#!" + sys.executable + "\n" + '''
+import json, os, pathlib, sys
+root = pathlib.Path(__file__).parent
+app, = sys.argv[1:]
+assert pathlib.Path(app).is_absolute() and pathlib.Path(app).is_dir(), app
+with (root / "app-operations.jsonl").open("a") as log:
+    print(json.dumps(["open", app]), file=log)
+if os.environ.get("TEST_OPEN_FAIL"):
+    sys.exit(1)
+''')
+            opener.chmod(0o755)
             for filename in ("install.command", "uninstall.command"):
                 wrapper = (PROJECT / filename).read_text().replace("$HOME", str(user_root))
                 wrapper = wrapper.replace("/usr/bin/sudo", str(sudo))
                 wrapper = wrapper.replace("/usr/sbin/sysctl", str(root / "sysctl"))
                 wrapper = wrapper.replace("/usr/bin/curl", str(curl))
+                wrapper = wrapper.replace("/usr/bin/open", str(opener))
                 wrapper = wrapper.replace('"$staged_app/Contents/MacOS/NexonBridge" --remember-handler', f'echo remember >> "{root / "handler.log"}"')
                 wrapper = wrapper.replace('"$app/Contents/MacOS/NexonBridge" --restore-handler', ': # Do not change real URL preferences in fixture tests')
                 wrapper = wrapper.replace("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", str(register))
@@ -244,8 +257,9 @@ if action == "-f" and failure.exists():
 
             def wrapper_run(filename, success=True, args=(), **environment):
                 result = subprocess.run(["/bin/bash", str(package / filename), *args], text=True, capture_output=True,
-                                        env={**os.environ, "TEST_ICON_MODE": "", **environment})
+                                        env={**os.environ, "TEST_ICON_MODE": "", "TEST_OPEN_FAIL": "", **environment})
                 assert (result.returncode == 0) == success, result.stdout + result.stderr
+                return result
 
             def change_app_metadata(app, changes, sign=True):
                 info = app / info_path
@@ -255,8 +269,8 @@ if action == "-f" and failure.exists():
                 if sign:
                     subprocess.run(["/usr/bin/codesign", "--force", "--sign", "-", str(app)], check=True, capture_output=True)
 
-            def registered_operations():
-                return [json.loads(line) for line in (root / "registrations.jsonl").read_text().splitlines()]
+            def app_operations():
+                return [json.loads(line) for line in (root / "app-operations.jsonl").read_text().splitlines()]
 
             assert "CFBundleIconFile" not in plistlib.loads((built_app / info_path).read_bytes()), "test with the base build"
             wrapper_run("install.command")
@@ -277,7 +291,7 @@ if action == "-f" and failure.exists():
             original_executable = executable.read_bytes()
             original_state = state_file.read_bytes()
             original_handler = (root / "handler.log").read_bytes()
-            original_registrations = registered_operations()
+            original_registrations = app_operations()
             for mode, attempts in (("failed-lookup", 1), ("wrong-track", 1), ("wrong-bundle", 1),
                                    ("invalid-host", 1), ("failed-image", 2), ("invalid-image", 2), ("oversized-image", 2)):
                 (root / "downloads.log").write_text("")
@@ -286,7 +300,7 @@ if action == "-f" and failure.exists():
                 assert installed_info.read_bytes() == original_info and icon_path.read_bytes() == first_icon, mode
                 assert executable.read_bytes() == original_executable, mode
                 assert state_file.read_bytes() == original_state and not backup_dir.exists(), mode
-                assert registered_operations() == original_registrations and (root / "handler.log").read_bytes() == original_handler, mode
+                assert app_operations() == original_registrations and (root / "handler.log").read_bytes() == original_handler, mode
                 assert not list(installed.parent.glob(".mabinogi-install.*")), mode
 
             def legacy_backup(name, changes, sign=True):
@@ -311,15 +325,15 @@ if action == "-f" and failure.exists():
                     metadata = plistlib.loads(backup.read(member))
                     archived_versions.append(metadata["CFBundleShortVersionString"])
             assert "0.1.3" in archived_versions
-            assert registered_operations()[-3:] == [["-u", str(legacy)], ["-u", str(installed)], ["-f", str(installed)]]
+            assert app_operations()[-3:] == [["-u", str(legacy)], ["-u", str(installed)], ["-f", str(installed)]]
 
             change_app_metadata(installed, {"CFBundleShortVersionString": "0.1.2"})
             original = (installed / info_path).read_bytes()
             (root / "fail-next-registration").touch()
             wrapper_run("install.command", success=False, args=("--keep-network",))
             assert (installed / info_path).read_bytes() == original, "restore the old launcher after registration fails"
-            assert registered_operations()[-4:] == [["-u", str(installed)], ["-f", str(installed)],
-                                                    ["-u", str(installed)], ["-f", str(installed)]]
+            assert app_operations()[-4:] == [["-u", str(installed)], ["-f", str(installed)],
+                                            ["-u", str(installed)], ["-f", str(installed)]]
 
             saved_payload = package / "launcher-payload.saved"
             payload.rename(saved_payload)
@@ -373,7 +387,48 @@ if action == "-f" and failure.exists():
             wrapper_run("uninstall.command", args=("--app-dir", str(alternate), "--keep-network"))
             assert not (alternate / app_name).exists() and not plist.exists()
             assert json.loads(state_file.read_text())["value"] == 1500000
+            assert all(action != "open" for action, _ in app_operations()), "legacy and source installs stay manual"
+
+            modern = package / "Modern Package"
+            support = modern / "Support"
+            support.mkdir(parents=True)
+            entry = modern / "安裝並啟動.command"
+            entry.write_text((package / "install.command").read_text())
+            (support / "network-settings.sh").write_text(source)
+            modern_payload = support / "launcher-payload.zip"
+            package_app(built_app, modern_payload)
+            destination = root / "Modern Applications"
+            modern_app = destination / app_name
+            args = ("--app-dir", str(destination))
+
+            before = len(app_operations())
+            wrapper_run(entry, args=args)
+            assert plist.exists() and modern_app.is_dir()
+            assert app_operations()[before:] == [["-f", str(modern_app)], ["open", str(modern_app)]]
+
+            before = len(app_operations())
+            wrapper_run(entry, args=(*args, "--no-launch", "--keep-network"))
+            switch_registration = [["-u", str(modern_app)], ["-f", str(modern_app)]]
+            assert app_operations()[before:] == switch_registration
+
+            before = len(app_operations())
+            result = wrapper_run(entry, args=(*args, "--keep-network"), TEST_OPEN_FAIL="1")
+            assert modern_app.is_dir() and "請手動開啟" in result.stderr and str(modern_app) in result.stderr
+            assert app_operations()[before:] == [*switch_registration, ["open", str(modern_app)]]
+
+            before = len(app_operations())
+            (root / "fail-next-registration").touch()
+            wrapper_run(entry, success=False, args=(*args, "--keep-network"))
+            assert modern_app.is_dir() and app_operations()[before:] == switch_registration * 2
+
+            before = len(app_operations())
+            original_state = state_file.read_bytes()
+            modern_payload.rename(modern / "launcher-payload.zip")
+            result = wrapper_run(entry, success=False, args=args)
+            assert "安裝包不完整" in result.stderr
+            assert modern_app.is_dir() and app_operations()[before:] == [] and state_file.read_bytes() == original_state
             print("PASS: App Store lookup and icon refresh, safe download failure, ZIP backups, legacy migration, registration rollback and removal")
+            print("PASS: one-click package layout, launch after registration, no-launch option and manual fallback")
     print("PASS: install, repeated install, removal, original value, later changes, permissions, symlinks, unrelated files, startup failure recovery")
 
 
