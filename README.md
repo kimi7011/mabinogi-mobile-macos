@@ -2,7 +2,7 @@
 
 用 CrossOver 在 Apple 晶片 Mac 玩台服。完成首次設定後，點「瑪奇 Mobile 啟動」就能開遊戲。
 
-**[下載 v0.1.7 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/raw/refs/heads/main/MabinogiMobileMac-arm64.zip)**
+**[下載 v0.1.7 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/releases/download/v0.1.7/MabinogiMobileMac-arm64.zip)**
 
 ## 第一次安裝
 
@@ -16,6 +16,6 @@
 
 更新啟動器時，先關閉遊戲及 CrossOver 容器內的 Nexon Launcher，再執行新版的「安裝並啟動.command」。安裝會沿用原本的容器和 Nexon 登入設定。
 
-[macOS 開啟提示、移除與疑難排解](docs/advanced.md) · [SHA-256](https://github.com/kimi7011/mabinogi-mobile-macos/blob/main/SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues)
+[macOS 開啟提示、移除與疑難排解](docs/advanced.md) · [SHA-256](https://github.com/kimi7011/mabinogi-mobile-macos/releases/download/v0.1.7/SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues)
 
 社群製作的啟動工具，採用 [MIT 授權](LICENSE)。
