@@ -1,8 +1,8 @@
 # 瑪奇 Mobile × macOS
 
-用 CrossOver 在 Apple Silicon Mac 啟動台灣版《瑪奇 Mobile》。v0.1.5 將更新前的啟動器封存為 ZIP，避免新舊版本同時執行而反覆跳出外接磁碟權限提示。
+用 CrossOver 在 Apple Silicon Mac 啟動台灣版《瑪奇 Mobile》。v0.1.6 每次安裝或更新時，會從台灣 App Store 取得 NEXON 最新上架的遊戲圖示。舊版啟動器會封存為 ZIP，避免新舊版本同時執行而反覆跳出外接磁碟權限提示。
 
-**[下載 v0.1.5 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/raw/refs/heads/main/MabinogiMobileMac-arm64.zip)** · [SHA-256](https://github.com/kimi7011/mabinogi-mobile-macos/blob/main/SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues)
+**[下載 v0.1.6 安裝包](https://github.com/kimi7011/mabinogi-mobile-macos/raw/refs/heads/main/MabinogiMobileMac-arm64.zip)** · [SHA-256](https://github.com/kimi7011/mabinogi-mobile-macos/blob/main/SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues)
 
 啟動時會自動為瑪奇容器套用 DXMT，需使用 Apple Silicon、macOS 14 以上，以及含 DXMT 的 CrossOver。
 

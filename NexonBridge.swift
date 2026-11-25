@@ -1,4 +1,76 @@
 import AppKit
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
+
+enum AppIcon {
+    enum RenderError: LocalizedError {
+        case invalidArtwork
+        case cannotRender
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidArtwork: return "圖示來源必須是邊長 512 至 2048 像素且大小未超過 4 MiB 的正方形 PNG。"
+            case .cannotRender: return "無法產生 macOS 圖示。"
+            }
+        }
+    }
+
+    static func makeIconset(from input: URL, at output: URL) throws {
+        let maximumSize = 4 * 1024 * 1024
+        let metadata = try input.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard metadata.isRegularFile == true, let fileSize = metadata.fileSize,
+              (1...maximumSize).contains(fileSize),
+              let source = CGImageSourceCreateWithURL(input as CFURL, nil),
+              CGImageSourceGetType(source) == UTType.png.identifier as CFString,
+              CGImageSourceGetCount(source) == 1,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              (512...2048).contains(width),
+              properties[kCGImagePropertyPixelHeight] as? Int == width,
+              let artwork = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw RenderError.invalidArtwork
+        }
+
+        let files = FileManager.default
+        try files.createDirectory(at: output, withIntermediateDirectories: false)
+        do {
+            for size in [16, 32, 128, 256, 512] {
+                try render(artwork, side: size, to: output.appendingPathComponent("icon_\(size)x\(size).png"))
+                try render(artwork, side: size * 2, to: output.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
+            }
+        } catch {
+            try? files.removeItem(at: output)
+            throw error
+        }
+    }
+
+    private static func render(_ artwork: CGImage, side: Int, to file: URL) throws {
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8,
+                                      bytesPerRow: side * 4, space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            throw RenderError.cannotRender
+        }
+        let extent = CGFloat(side) * 0.8046875
+        let inset = (CGFloat(side) - extent) / 2
+        let box = CGRect(x: inset, y: inset, width: extent, height: extent)
+        let radius = extent * 0.21
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+        context.interpolationQuality = .high
+        context.addPath(CGPath(roundedRect: box, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        context.clip()
+        context.draw(artwork, in: box)
+
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw RenderError.cannotRender
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw RenderError.cannotRender }
+    }
+}
 
 struct NexonBottle {
     let directory: URL
@@ -366,6 +438,22 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             jobs.removeValue(forKey: id)
             fail("無法啟動 Nexon", "請確認 CrossOver 與選定容器內的 Nexon Launcher 仍在原本的位置。")
         }
+    }
+}
+
+if CommandLine.arguments.dropFirst().first == "--make-app-icon" {
+    let arguments = CommandLine.arguments
+    guard arguments.count == 4 else {
+        fputs("用法：--make-app-icon INPUT.png OUTPUT.iconset\n", stderr)
+        exit(2)
+    }
+    do {
+        try AppIcon.makeIconset(from: URL(fileURLWithPath: arguments[2]),
+                               at: URL(fileURLWithPath: arguments[3], isDirectory: true))
+        exit(0)
+    } catch {
+        fputs("無法製作啟動器圖示。\(error.localizedDescription)\n", stderr)
+        exit(1)
     }
 }
 

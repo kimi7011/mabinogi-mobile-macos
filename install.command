@@ -45,9 +45,58 @@ fi
 /usr/bin/codesign --verify --deep --strict "$source_app"
 source_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$source_app/Contents/Info.plist")"
 [[ "$source_id" == "$app_id" ]] || { echo '安裝 App 的識別碼不符。' >&2; exit 1; }
-"$source_app/Contents/MacOS/NexonBridge" --remember-handler
-/usr/bin/ditto "$source_app" "$stage/$app_name"
-/usr/bin/codesign --verify --deep --strict "$stage/$app_name"
+staged_app="$stage/$app_name"
+/usr/bin/ditto "$source_app" "$staged_app"
+/usr/bin/codesign --verify --deep --strict "$staged_app"
+
+download_official_file() {
+    local url="$1" output="$2" max_size="$3" size
+    /usr/bin/curl --disable --fail --silent --show-error --proto '=https' \
+        --connect-timeout 8 --max-time 20 --retry 2 --retry-max-time 30 --max-filesize "$max_size" \
+        --output "$output" "$url" || return 1
+    size="$(/usr/bin/stat -f %z "$output")" || return 1
+    [[ "$size" -gt 0 && "$size" -le "$max_size" ]]
+}
+
+install_official_icon() {
+    local lookup_url='https://itunes.apple.com/lookup?id=6759030432&country=tw'
+    local artwork_pattern='^https://is[0-9]+-ssl\.mzstatic\.com/image/thumb/([A-Za-z0-9_-][A-Za-z0-9_.-]*/)+[0-9]{2,4}x[0-9]{2,4}bb\.(jpg|jpeg|png|webp)$'
+    local lookup="$stage/app-store.json" png="$stage/official-icon.png" iconset="$stage/MabinogiOfficial.iconset"
+    local resources="$staged_app/Contents/Resources" track_id bundle_id artwork_url
+
+    echo '正在查詢 Apple App Store 最新的瑪奇 Mobile 圖示。'
+    if ! download_official_file "$lookup_url" "$lookup" 1048576; then
+        echo '無法查詢台灣 App Store，請確認網路連線後重試。' >&2
+        return 1
+    fi
+    if ! track_id="$(/usr/bin/plutil -extract results.0.trackId raw -o - "$lookup" 2>/dev/null)" ||
+       ! bundle_id="$(/usr/bin/plutil -extract results.0.bundleId raw -o - "$lookup" 2>/dev/null)" ||
+       ! artwork_url="$(/usr/bin/plutil -extract results.0.artworkUrl512 raw -o - "$lookup" 2>/dev/null)" ||
+       [[ "$track_id" != 6759030432 || "$bundle_id" != com.nexon.devcat.mm.tw || ! "$artwork_url" =~ $artwork_pattern ]]; then
+        echo '無法驗證台灣 App Store 的瑪奇 Mobile 圖示來源。' >&2
+        return 1
+    fi
+    if ! download_official_file "${artwork_url%/*}/1024x1024bb.png" "$png" 4194304; then
+        echo '下載官方圖示失敗，請確認網路連線後重試。' >&2
+        return 1
+    fi
+
+    [[ ! -L "$resources" && ! -L "$resources/MabinogiOfficial.icns" ]]
+    mkdir -p "$resources"
+    if ! "$source_app/Contents/MacOS/NexonBridge" --make-app-icon "$png" "$iconset" ||
+       ! /usr/bin/iconutil -c icns -o "$resources/MabinogiOfficial.icns" "$iconset"; then
+        echo '無法使用 App Store 提供的圖示檔案。' >&2
+        return 1
+    fi
+    /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string MabinogiOfficial.icns' "$staged_app/Contents/Info.plist"
+    /usr/bin/codesign --force --sign - "$staged_app"
+    /usr/bin/codesign --verify --deep --strict "$staged_app"
+}
+
+if [ -f "$payload" ] && ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$staged_app/Contents/Info.plist" >/dev/null 2>&1; then
+    install_official_icon
+fi
+"$staged_app/Contents/MacOS/NexonBridge" --remember-handler
 
 backup_app() {
     local app="$1" backup verification pending archive
@@ -110,7 +159,7 @@ if [ -e "$target_app" ]; then
         exit 1
     fi
 fi
-if mv "$stage/$app_name" "$target_app"; then
+if mv "$staged_app" "$target_app"; then
     if "$lsregister" -f "$target_app"; then
         echo "安裝完成，請開啟：$target_app"
         echo '第一次仍需在 CrossOver 安裝官方 Nexon Launcher，登入並下載遊戲。'

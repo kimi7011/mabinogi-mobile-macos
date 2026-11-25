@@ -6,6 +6,7 @@
 
 - 安裝器預設將 App 放在 `~/Applications/瑪奇 Mobile 啟動.app`。原修復入口若使用另一個 bundle ID，可用下方指令安裝到獨立資料夾。
 - 更新前先離開遊戲與 Nexon Launcher，並在 CrossOver 結束該瑪奇容器內仍在背景執行的程式。更新後請從安裝位置開啟啟動器。
+- 每次執行 GitHub 安裝包的 `install.command` 時，安裝器會從台灣 App Store 取得並套用 NEXON 最新上架的遊戲圖示。若查詢、下載或驗證失敗，安裝會停止，現有啟動器仍可使用。[台灣 App Store](https://apps.apple.com/tw/app/id6759030432)
 - 容器位於外接磁碟時，先掛載磁碟。macOS 詢問「卸除式卷宗」存取時，請允許啟動器存取存放容器的磁碟。
 - 此安裝包使用 ad-hoc 簽章。若 macOS 阻擋，確認檔案來自本專案後，依系統提供的個別 App 開啟方式處理。
 - 登入後可在 Nexon「啟動器設定 → 一般 → 安全性」開啟自動登入。之後使用帳號選單的「離開」結束 Nexon，讓相同容器下次讀取既有登入狀態。
