@@ -7,7 +7,7 @@
 ## 第一次安裝
 
 1. [下載並開啟 CrossOver](https://www.codeweavers.com/crossover/download-links)，選擇試用或啟用授權。建議使用 macOS 14 或更新版本。
-2. [下載台灣版 Nexon Launcher](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe)。在 CrossOver 選「安裝 → 安裝未列出的應用程式」，選取安裝檔，建立專用的 **Windows 10 64 位元容器**。等 Nexon Launcher 完成更新後離開。[CrossOver 圖文指南](https://support.codeweavers.com/getting-started/installing-an-unlisted-application)
+2. [下載台灣版 Nexon Launcher](https://download.nxfs.nexon.com/download-launcher?file=NexonLauncherSetup_TW.exe)。在 CrossOver 選「安裝 → 安裝未列出的應用程式」，選取安裝檔，建立專用的 **Windows 10 64 位元容器**。等 Nexon Launcher 完成首次更新後關閉它，再做下一步。若更新完成後視窗仍是透明的，參考[關閉透明視窗的步驟](docs/advanced.md#nexon-launcher-開啟後是透明視窗)。[CrossOver 圖文指南](https://support.codeweavers.com/getting-started/installing-an-unlisted-application)
 3. 解壓縮本工具的 ZIP，連按兩下 **「安裝並啟動.command」**。安裝時需要網路，並透過管理員驗證套用網路相容設定。第一次開啟後，依畫面選擇容器、登入 Nexon 並下載遊戲。
 
 之後直接開啟個人「應用程式」資料夾（`~/Applications`）裡的 **「瑪奇 Mobile 啟動」**。Nexon 若要求重新登入或下載更新，依它的畫面完成即可。

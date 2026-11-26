@@ -175,6 +175,19 @@ def test_network_script(built_app=None):
             sudo.chmod(0o755)
             (root / "app-store-icon.png").write_bytes(icon_png(b"\x76\x89\xa1"))
             (root / "app-store-icon-updated.png").write_bytes(icon_png(b"\xa9\x42\x25"))
+            subprocess.run(["/usr/bin/sips", "-z", "512", "512", "-s", "format", "jpeg",
+                            str(root / "app-store-icon.png"), "--out", str(root / "app-store-icon.jpg")],
+                           check=True, capture_output=True)
+            iconutil = root / "iconutil"
+            iconutil.write_text("""#!/bin/bash
+case "${TEST_ICON_MODE:-}:$*" in
+    failed-conversion:*|failed-large-conversion:*app-store-large.iconset)
+        printf 'partial output' > "$4"
+        exit 1 ;;
+esac
+exec /usr/bin/iconutil "$@"
+""")
+            iconutil.chmod(0o755)
             curl = root / "curl"
             curl.write_text("#!" + sys.executable + "\n" + '''
 import json, os, pathlib, shutil, sys
@@ -201,11 +214,10 @@ if url == "https://itunes.apple.com/lookup?id=6759030432&country=tw":
     if mode == "invalid-host":
         result["artworkUrl512"] = result["artworkUrl512"].replace("mzstatic.com", "mzstatic.com.example")
     output.write_text(json.dumps({"resultCount": 1, "results": [result]}))
-else:
-    assert url == cdn + stem + "/1024x1024bb.png", url
+elif url == cdn + stem + "/1024x1024bb.png":
     if mode == "failed-image":
         sys.exit(22)
-    if mode == "invalid-image":
+    if mode in ("invalid-image", "invalid-large-image"):
         output.write_bytes(b"not an image")
     elif mode == "oversized-image":
         with output.open("wb") as file:
@@ -213,6 +225,14 @@ else:
     else:
         fixture = "app-store-icon-updated.png" if mode == "updated-icon" else "app-store-icon.png"
         shutil.copyfile(root / fixture, output)
+else:
+    assert url == cdn + stem + "/512x512bb.jpg", url
+    if mode in ("failed-image", "oversized-image"):
+        sys.exit(22)
+    if mode == "invalid-image":
+        output.write_bytes(b"not an image")
+    else:
+        shutil.copyfile(root / "app-store-icon.jpg", output)
 ''')
             curl.chmod(0o755)
             register = root / "lsregister"
@@ -246,6 +266,7 @@ if os.environ.get("TEST_OPEN_FAIL"):
                 wrapper = wrapper.replace("/usr/bin/sudo", str(sudo))
                 wrapper = wrapper.replace("/usr/sbin/sysctl", str(root / "sysctl"))
                 wrapper = wrapper.replace("/usr/bin/curl", str(curl))
+                wrapper = wrapper.replace("/usr/bin/iconutil", str(iconutil))
                 wrapper = wrapper.replace("/usr/bin/open", str(opener))
                 wrapper = wrapper.replace('"$staged_app/Contents/MacOS/NexonBridge" --remember-handler', f'echo remember >> "{root / "handler.log"}"')
                 wrapper = wrapper.replace('"$app/Contents/MacOS/NexonBridge" --restore-handler', ': # Do not change real URL preferences in fixture tests')
@@ -286,22 +307,33 @@ if os.environ.get("TEST_OPEN_FAIL"):
             assert first_icon[:4] == b"icns"
             subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(installed)], check=True)
 
-            original_info = installed_info.read_bytes()
-            executable = installed / "Contents/MacOS/NexonBridge"
-            original_executable = executable.read_bytes()
             original_state = state_file.read_bytes()
-            original_handler = (root / "handler.log").read_bytes()
-            original_registrations = app_operations()
             for mode, attempts in (("failed-lookup", 1), ("wrong-track", 1), ("wrong-bundle", 1),
-                                   ("invalid-host", 1), ("failed-image", 2), ("invalid-image", 2), ("oversized-image", 2)):
+                                   ("invalid-host", 1), ("failed-image", 3), ("invalid-image", 3),
+                                   ("oversized-image", 3), ("failed-conversion", 3),
+                                   ("invalid-large-image", 3), ("failed-large-conversion", 3)):
                 (root / "downloads.log").write_text("")
-                wrapper_run("install.command", success=False, TEST_ICON_MODE=mode)
-                assert len((root / "downloads.log").read_text().splitlines()) == attempts, mode
-                assert installed_info.read_bytes() == original_info and icon_path.read_bytes() == first_icon, mode
-                assert executable.read_bytes() == original_executable, mode
+                folder = root / mode
+                clean_app = folder / app_name
+                result = wrapper_run("install.command", args=("--keep-network", "--app-dir", str(folder)),
+                                     TEST_ICON_MODE=mode)
+                attempted = (root / "downloads.log").read_text().splitlines()
+                assert len(attempted) == attempts, mode
+                if attempts == 3:
+                    assert attempted[1].endswith("/1024x1024bb.png") and attempted[2].endswith("/512x512bb.jpg"), mode
+                clean_info = plistlib.loads((clean_app / info_path).read_bytes())
+                if mode in ("invalid-large-image", "failed-large-conversion"):
+                    assert clean_info["CFBundleIconFile"] == "MabinogiOfficial.icns", mode
+                    assert (clean_app / icon_path.relative_to(installed)).read_bytes().startswith(b"icns"), mode
+                else:
+                    assert "CFBundleIconFile" not in clean_info and "暫用 macOS 預設圖示" in result.stdout, mode
+                    assert not (clean_app / icon_path.relative_to(installed)).exists(), mode
+                subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(clean_app)], check=True)
+                assert icon_path.read_bytes() == first_icon, mode
                 assert state_file.read_bytes() == original_state and not backup_dir.exists(), mode
-                assert app_operations() == original_registrations and (root / "handler.log").read_bytes() == original_handler, mode
-                assert not list(installed.parent.glob(".mabinogi-install.*")), mode
+                assert not list(folder.glob(".mabinogi-install.*")), mode
+            wrapper_run("install.command", args=("--keep-network", "--app-dir", str(root / "failed-lookup")))
+            assert (root / "failed-lookup" / app_name / icon_path.relative_to(installed)).read_bytes() == first_icon
 
             def legacy_backup(name, changes, sign=True):
                 app = backup_dir / name / app_name
@@ -317,7 +349,7 @@ if os.environ.get("TEST_OPEN_FAIL"):
             assert icon_path.read_bytes() != first_icon, "reinstall with changed App Store artwork must refresh the icon"
             assert not legacy.exists() and unrelated.is_dir() and unsigned.is_dir()
             archives = list(backup_dir.glob("app.*/*.zip"))
-            assert len(archives) == 2
+            assert len(archives) == 3
             archived_versions = []
             for archive in archives:
                 with ZipFile(archive) as backup:
@@ -334,6 +366,13 @@ if os.environ.get("TEST_OPEN_FAIL"):
             assert (installed / info_path).read_bytes() == original, "restore the old launcher after registration fails"
             assert app_operations()[-4:] == [["-u", str(installed)], ["-f", str(installed)],
                                             ["-u", str(installed)], ["-f", str(installed)]]
+
+            previous_icon = icon_path.read_bytes()
+            result = wrapper_run("install.command", args=("--keep-network",), TEST_ICON_MODE="invalid-image")
+            assert "已保留上次安裝的官方圖示" in result.stdout
+            assert icon_path.read_bytes() == previous_icon, "upgrade must retain the verified official icon"
+            assert (installed / info_path).read_bytes() != original, "an artwork failure must not block an update"
+            subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(installed)], check=True)
 
             saved_payload = package / "launcher-payload.saved"
             payload.rename(saved_payload)
@@ -402,8 +441,9 @@ if os.environ.get("TEST_OPEN_FAIL"):
             args = ("--app-dir", str(destination))
 
             before = len(app_operations())
-            wrapper_run(entry, args=args)
+            result = wrapper_run(entry, args=args, TEST_ICON_MODE="failed-conversion")
             assert plist.exists() and modern_app.is_dir()
+            assert "暫用 macOS 預設圖示" in result.stdout
             assert app_operations()[before:] == [["-f", str(modern_app)], ["open", str(modern_app)]]
 
             before = len(app_operations())
@@ -427,7 +467,7 @@ if os.environ.get("TEST_OPEN_FAIL"):
             result = wrapper_run(entry, success=False, args=args)
             assert "安裝包不完整" in result.stderr
             assert modern_app.is_dir() and app_operations()[before:] == [] and state_file.read_bytes() == original_state
-            print("PASS: App Store lookup and icon refresh, safe download failure, ZIP backups, legacy migration, registration rollback and removal")
+            print("PASS: App Store refresh, original JPEG retry, nonblocking icon failures, preserving the prior icon, ZIP backups, migration and rollback")
             print("PASS: one-click package layout, launch after registration, no-launch option and manual fallback")
     print("PASS: install, repeated install, removal, original value, later changes, permissions, symlinks, unrelated files, startup failure recovery")
 

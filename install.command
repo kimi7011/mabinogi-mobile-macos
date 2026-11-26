@@ -76,15 +76,23 @@ download_official_file() {
     [[ "$size" -gt 0 && "$size" -le "$max_size" ]]
 }
 
-install_official_icon() {
+render_official_icon() {
+    local url="$1" name="$2"
+    local image="$stage/$name" iconset="$stage/$name.iconset"
+    download_official_file "$url" "$image" 4194304 &&
+        "$source_app/Contents/MacOS/NexonBridge" --make-app-icon "$image" "$iconset" &&
+        /usr/bin/iconutil -c icns -o "$stage/$name.icns" "$iconset" &&
+        mv "$stage/$name.icns" "$stage/MabinogiOfficial.icns"
+}
+
+fetch_official_icon() {
     local lookup_url='https://itunes.apple.com/lookup?id=6759030432&country=tw'
     local artwork_pattern='^https://is[0-9]+-ssl\.mzstatic\.com/image/thumb/([A-Za-z0-9_-][A-Za-z0-9_.-]*/)+[0-9]{2,4}x[0-9]{2,4}bb\.(jpg|jpeg|png|webp)$'
-    local lookup="$stage/app-store.json" png="$stage/official-icon.png" iconset="$stage/MabinogiOfficial.iconset"
-    local resources="$staged_app/Contents/Resources" track_id bundle_id artwork_url
+    local lookup="$stage/app-store.json" track_id bundle_id artwork_url
 
     echo '正在查詢 Apple App Store 最新的瑪奇 Mobile 圖示。'
     if ! download_official_file "$lookup_url" "$lookup" 1048576; then
-        echo '無法查詢台灣 App Store，請確認網路連線後重試。' >&2
+        echo '無法查詢台灣 App Store 的圖示。' >&2
         return 1
     fi
     if ! track_id="$(/usr/bin/plutil -extract results.0.trackId raw -o - "$lookup" 2>/dev/null)" ||
@@ -94,25 +102,43 @@ install_official_icon() {
         echo '無法驗證台灣 App Store 的瑪奇 Mobile 圖示來源。' >&2
         return 1
     fi
-    if ! download_official_file "${artwork_url%/*}/1024x1024bb.png" "$png" 4194304; then
-        echo '下載官方圖示失敗，請確認網路連線後重試。' >&2
-        return 1
+    if render_official_icon "${artwork_url%/*}/1024x1024bb.png" app-store-large ||
+       render_official_icon "$artwork_url" app-store-original; then
+        return 0
     fi
+    echo '無法使用 App Store 提供的圖示檔案。' >&2
+    return 1
+}
 
-    [[ ! -L "$resources" && ! -L "$resources/MabinogiOfficial.icns" ]]
+previous_official_icon() {
+    local resources="$target_app/Contents/Resources" file key
+    file="$resources/MabinogiOfficial.icns"
+    [[ -f "$file" && ! -L "$resources" && ! -L "$file" ]] || return 1
+    key="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$target_app/Contents/Info.plist" 2>/dev/null)" || return 1
+    [[ "$key" == MabinogiOfficial.icns ]] &&
+        /usr/bin/codesign --verify --deep --strict "$target_app" &&
+        /usr/bin/ditto "$file" "$stage/MabinogiOfficial.icns"
+}
+
+attach_official_icon() {
+    local resources="$staged_app/Contents/Resources"
+    [[ ! -L "$resources" && ! -L "$resources/MabinogiOfficial.icns" ]] || return 1
     mkdir -p "$resources"
-    if ! "$source_app/Contents/MacOS/NexonBridge" --make-app-icon "$png" "$iconset" ||
-       ! /usr/bin/iconutil -c icns -o "$resources/MabinogiOfficial.icns" "$iconset"; then
-        echo '無法使用 App Store 提供的圖示檔案。' >&2
-        return 1
-    fi
+    mv "$stage/MabinogiOfficial.icns" "$resources/MabinogiOfficial.icns"
     /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string MabinogiOfficial.icns' "$staged_app/Contents/Info.plist"
     /usr/bin/codesign --force --sign - "$staged_app"
     /usr/bin/codesign --verify --deep --strict "$staged_app"
 }
 
 if [ -f "$payload" ] && ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$staged_app/Contents/Info.plist" >/dev/null 2>&1; then
-    install_official_icon
+    if fetch_official_icon; then
+        attach_official_icon
+    elif previous_official_icon; then
+        echo '已保留上次安裝的官方圖示，繼續安裝。'
+        attach_official_icon
+    else
+        echo '暫用 macOS 預設圖示，繼續安裝。重跑安裝程式時會再嘗試下載官方圖示。'
+    fi
 fi
 "$staged_app/Contents/MacOS/NexonBridge" --remember-handler
 

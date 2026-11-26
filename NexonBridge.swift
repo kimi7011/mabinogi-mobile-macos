@@ -10,7 +10,7 @@ enum AppIcon {
 
         var errorDescription: String? {
             switch self {
-            case .invalidArtwork: return "圖示來源必須是邊長 512 至 2048 像素且大小未超過 4 MiB 的正方形 PNG。"
+            case .invalidArtwork: return "圖示來源必須是邊長 512 至 2048 像素且大小未超過 4 MiB 的正方形 PNG、JPEG 或 WebP。"
             case .cannotRender: return "無法產生 macOS 圖示。"
             }
         }
@@ -18,11 +18,12 @@ enum AppIcon {
 
     static func makeIconset(from input: URL, at output: URL) throws {
         let maximumSize = 4 * 1024 * 1024
+        let artworkTypes = [UTType.png.identifier, UTType.jpeg.identifier, UTType.webP.identifier]
         let metadata = try input.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
         guard metadata.isRegularFile == true, let fileSize = metadata.fileSize,
               (1...maximumSize).contains(fileSize),
               let source = CGImageSourceCreateWithURL(input as CFURL, nil),
-              CGImageSourceGetType(source) == UTType.png.identifier as CFString,
+              let type = CGImageSourceGetType(source), artworkTypes.contains(type as String),
               CGImageSourceGetCount(source) == 1,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
@@ -431,7 +432,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
         let bottles = Launcher.availableBottles(in: root)
         guard !bottles.isEmpty else {
             fail("找不到已安裝的 Nexon Launcher",
-                 "請下載台灣版 Nexon Launcher。在 CrossOver 選擇「安裝未列出的應用程式」，選取 NexonLauncherSetup_TW.exe，建立 Windows 10 64 位元容器。完成後再開啟「瑪奇 Mobile 啟動」。\n\n若已安裝在外接磁碟，請先接上磁碟並確認容器資料夾可存取。\n\(root.path)",
+                 "請下載台灣版 Nexon Launcher。在 CrossOver 選擇「安裝未列出的應用程式」，選取 NexonLauncherSetup_TW.exe，建立 Windows 10 64 位元容器。等 Nexon Launcher 完成首次更新後關閉它，再開啟「瑪奇 Mobile 啟動」。\n\n若已安裝在外接磁碟，請先接上磁碟並確認容器資料夾可存取。\n\(root.path)",
                  action: ("下載官方 Nexon Launcher", Launcher.nexonDownloadURL))
             return
         }
@@ -494,7 +495,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
 if CommandLine.arguments.dropFirst().first == "--make-app-icon" {
     let arguments = CommandLine.arguments
     guard arguments.count == 4 else {
-        fputs("用法：--make-app-icon INPUT.png OUTPUT.iconset\n", stderr)
+        fputs("用法：--make-app-icon INPUT_IMAGE OUTPUT.iconset\n", stderr)
         exit(2)
     }
     do {
