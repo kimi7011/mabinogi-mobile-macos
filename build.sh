@@ -13,6 +13,7 @@ trap 'rm -rf "$stage"' EXIT
 app="$stage/瑪奇 Mobile 啟動.app"
 mkdir -p "$app/Contents/MacOS" "$stage/module-cache"
 cp "$project_dir/Info.plist" "$app/Contents/Info.plist"
+cp "$project_dir/NexonBridge.swift" "$stage/main.swift"
 if [ -n "${MABINOGI_ICON_PATH:-}" ]; then
     /usr/bin/iconutil -c iconset -o "$stage/CustomIcon.iconset" "$MABINOGI_ICON_PATH"
     mkdir -p "$app/Contents/Resources"
@@ -23,7 +24,8 @@ arch="$(/usr/bin/uname -m)"
 case "$arch" in arm64|x86_64) ;; *) echo '不支援此處理器架構。' >&2; exit 1 ;; esac
 /usr/bin/xcrun swiftc -swift-version 5 -O -target "${arch}-apple-macosx12.0" \
     -module-cache-path "$stage/module-cache" -framework AppKit \
-    "$project_dir/NexonBridge.swift" -o "$app/Contents/MacOS/NexonBridge"
+    "$stage/main.swift" "$project_dir/GameExitProcesses.swift" "$project_dir/GameExitTracker.swift" \
+    "$project_dir/GameExitTests.swift" -o "$app/Contents/MacOS/NexonBridge"
 /usr/bin/plutil -lint "$app/Contents/Info.plist"
 /usr/bin/codesign --force --sign - "$app"
 /usr/bin/codesign --verify --deep --strict "$app"

@@ -13,6 +13,7 @@
 
 - 首次開啟可能會詢問是否由此 App 處理 Nexon 登入連結。若 Nexon 或 Facebook 要求額外驗證，切回原本的 Nexon 視窗完成。
 - 遊戲更新卡住時，在原容器中完全關閉遊戲與 Nexon Launcher，再從官方 Nexon Launcher 完成更新。
+- 從「瑪奇 Mobile 啟動」進入台服後，遊戲結束時會自動關閉已辨識的 Nexon Launcher。這項清理適用於瑪奇專用容器，會先正常要求退出，再處理仍卡住的視窗。
 - 此工具會在相容的 Apple 晶片 Mac 和 CrossOver 上，為選定的瑪奇容器套用 DXMT。請使用專用容器，因為容器內其他 Windows 程式也會使用該圖形設定。[CodeWeavers 圖形設定](https://support.codeweavers.com/miscellanous/advanced-settings-in-crossover-mac-26)
 - 要重新選擇容器，先關閉遊戲與 Nexon，再執行 `open -n "$HOME/Applications/瑪奇 Mobile 啟動.app" --args --choose-bottle`。
 

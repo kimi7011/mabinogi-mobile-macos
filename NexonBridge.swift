@@ -248,7 +248,7 @@ enum Launcher {
         return gameBottles.count == 1 ? gameBottles.first : nil
     }
 
-    private static func isTaiwanGameURL(_ value: String) -> Bool {
+    static func isTaiwanGameURL(_ value: String) -> Bool {
         guard let url = URL(string: value) else { return false }
         return url.scheme?.lowercased() == "nxl" && url.host?.lowercased() == "play" && url.path == "/59826"
     }
@@ -290,7 +290,9 @@ enum Launcher {
 
 final class NexonBridge: NSObject, NSApplicationDelegate {
     private var receivedURL = false
+    private var handledLaunch = false
     private var jobs: [UUID: Process] = [:]
+    private var gameExitMonitor: GameExitMonitor?
     private weak var bottlePickerButton: NSButton?
 
     @objc private func bottleSelectionChanged(_ sender: NSPopUpButton) {
@@ -307,6 +309,12 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             guard let self, !self.receivedURL else { return }
             self.launch(Launcher.gameURL)
         }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard handledLaunch, !flag, jobs.isEmpty else { return true }
+        launch(Launcher.gameURL)
+        return false
     }
 
     @objc private func openURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
@@ -400,6 +408,12 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     }
 
     private func launch(_ url: String) {
+        handledLaunch = true
+        if Launcher.isTaiwanGameURL(url) {
+            // A new play request takes precedence over closing a previous launcher window.
+            gameExitMonitor?.stop()
+            gameExitMonitor = nil
+        }
         guard let wine = Launcher.wineURL() else {
             fail("找不到 CrossOver", "請從 CodeWeavers 官網下載並安裝 CrossOver。完成 CrossOver 的首次設定後，再開啟「瑪奇 Mobile 啟動」。",
                  action: ("開啟 CrossOver 官方下載", Launcher.crossOverDownloadURL))
@@ -451,17 +465,29 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
                     return
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                    if self.jobs.isEmpty { NSApp.terminate(nil) }
+                    self.terminateIfIdle()
                 }
             }
         }
         do {
             jobs[id] = task
             try task.run()
+            if Launcher.isTaiwanGameURL(url) {
+                let monitor = GameExitMonitor(bottle: bottle, wine: wine)
+                gameExitMonitor = monitor
+                monitor.start { [weak self] in
+                    self?.gameExitMonitor = nil
+                    self?.terminateIfIdle()
+                }
+            }
         } catch {
             jobs.removeValue(forKey: id)
             fail("無法啟動 Nexon", "請確認 CrossOver 與選定容器內的 Nexon Launcher 仍在原本的位置。")
         }
+    }
+
+    private func terminateIfIdle() {
+        if jobs.isEmpty && gameExitMonitor == nil { NSApp.terminate(nil) }
     }
 }
 
@@ -511,6 +537,7 @@ if CommandLine.arguments.contains("--restore-handler") {
 
 // A local test path that only modifies temporary fixtures.
 if CommandLine.arguments.contains("--self-test") {
+    testGameExitTracker()
     let invalid = ["", "https://example.com", "nxl://play/1\n", "nxl://play/1\t", "nxl://play/1\u{7f}", "nxl:" + String(repeating: "a", count: 32_768)]
     precondition(invalid.allSatisfy { !Launcher.validURL($0) })
     precondition(Launcher.validURL(Launcher.gameURL))
