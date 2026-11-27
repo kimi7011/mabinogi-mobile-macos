@@ -83,6 +83,9 @@ struct NexonBottle {
         directory.appendingPathComponent("drive_c/\(programFiles)/Nexon/Nexon Launcher/bin/nexon_client")
     }
     var executable: URL { clientDirectory.appendingPathComponent("nexon_client.exe") }
+    private var windowsLauncherBin: String { "C:\\\(programFiles)\\Nexon\\Nexon Launcher\\bin" }
+    var windowsClient: String { windowsLauncherBin + "\\nexon_client\\nexon_client.exe" }
+    var windowsFrontEnd: String { windowsLauncherBin + "\\front_end" }
     var taiwanGameExecutable: URL {
         directory.appendingPathComponent("drive_c/Nexon/Library/MabinogiMobile_TW/appdata/MabinogiMobile.exe")
     }
@@ -258,7 +261,7 @@ enum Launcher {
         // CrossOver uses the bottle name again when exporting macOS shortcuts.
         return ["--bottle", bottle.name, "--scope", "private", "--no-wait", "--debugmsg", "-all", "--workdir",
                 bottle.clientDirectory.path, bottle.executable.path] + flags +
-               ["--nxl=" + url, "C:\\\(bottle.programFiles)\\Nexon\\Nexon Launcher\\bin\\front_end"]
+               ["--nxl=" + url, bottle.windowsFrontEnd]
     }
 
     static func configureGraphics(wine: URL, bottle: NexonBottle, url: String) throws {
@@ -294,6 +297,8 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     private var handledLaunch = false
     private var jobs: [UUID: Process] = [:]
     private var gameExitMonitor: GameExitMonitor?
+    private var legacyRestart: UUID?
+    private weak var legacyRestartAlertWindow: NSWindow?
     private weak var bottlePickerButton: NSButton?
 
     @objc private func bottleSelectionChanged(_ sender: NSPopUpButton) {
@@ -409,8 +414,21 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     }
 
     private func launch(_ url: String) {
+        let playingTaiwan = Launcher.isTaiwanGameURL(url)
+        if let window = legacyRestartAlertWindow {
+            if playingTaiwan { return }
+            // Let a login link proceed after dismissing our modal prompt.
+            legacyRestart = nil
+            if NSApp.modalWindow === window { NSApp.abortModal() }
+            DispatchQueue.main.async { [weak self] in self?.launch(url) }
+            return
+        }
+        if legacyRestart != nil {
+            if playingTaiwan { return }
+            legacyRestart = nil
+        }
         handledLaunch = true
-        if Launcher.isTaiwanGameURL(url) {
+        if playingTaiwan {
             // A new play request takes precedence over closing a previous launcher window.
             gameExitMonitor?.stop()
             gameExitMonitor = nil
@@ -421,7 +439,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             return
         }
         guard (Launcher.tcpBuffer() ?? 0) >= 1_000_000 else {
-            fail("需要安裝網路相容設定", "請執行下載包中的 install.command，完成一次管理員驗證。之後開機會自動套用，避免 Nexon 一直停在驗證中。")
+            fail("需要安裝網路相容設定", "ZIP 安裝請解壓縮整包，執行最外層的「安裝並啟動.command」，並完成管理員驗證。\n\nHomebrew 安裝請在終端機執行：\nsudo \"$(command -v mabinogi-mobile-network)\" install\n\n完成後再開啟「瑪奇 Mobile 啟動」。")
             return
         }
         let root = Launcher.configuredBottleRoot()
@@ -440,7 +458,84 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
-        prepareHandler { self.runClient(wine: wine, bottle: bottle, url: url) }
+        prepareHandler { self.startClient(wine: wine, bottle: bottle, url: url) }
+    }
+
+    private func startClient(wine: URL, bottle: NexonBottle, url: String) {
+        guard legacyRestart == nil else { return }
+        if Launcher.isTaiwanGameURL(url), jobs.isEmpty {
+            let processes = GameExitProcesses(bottle: bottle, wine: wine)
+            if let old = processes.legacyLauncher() {
+                offerLegacyRestart(old, processes: processes, wine: wine, bottle: bottle, url: url)
+                return
+            }
+        }
+        runClient(wine: wine, bottle: bottle, url: url)
+    }
+
+    private func offerLegacyRestart(_ old: WatchedProcess, processes: GameExitProcesses,
+                                    wine: URL, bottle: NexonBottle, url: String) {
+        let token = UUID()
+        legacyRestart = token
+        let alert = NSAlert()
+        alert.messageText = "Nexon Launcher 需要重新開啟"
+        alert.informativeText = "這個容器的 Nexon Launcher 仍由 CrossOver 原本的入口開啟。如果仍在下載或更新，請選擇「稍後」。確認更新完成後，啟動器會正常關閉舊視窗，再用瑪奇 Mobile 的相容設定重新開啟。"
+        alert.addButton(withTitle: "稍後")
+        alert.addButton(withTitle: "更新已完成，重新開啟")
+        let response = runLegacyRestartAlert(alert)
+        guard legacyRestart == token else { return }
+        guard response == .alertSecondButtonReturn else {
+            legacyRestart = nil
+            terminateIfIdle()
+            return
+        }
+
+        if !processes.hasExited(old), !processes.requestLegacyQuit(old), !processes.hasExited(old) {
+            legacyRestartFailed()
+            return
+        }
+        waitForLegacyQuit(old, processes: processes, wine: wine, bottle: bottle, url: url,
+                          token: token, deadline: .now() + 10)
+    }
+
+    private func waitForLegacyQuit(_ old: WatchedProcess, processes: GameExitProcesses, wine: URL,
+                                   bottle: NexonBottle, url: String, token: UUID, deadline: DispatchTime) {
+        guard legacyRestart == token else { return }
+        if processes.hasExited(old), processes.canRelaunchAfterLegacyQuit(old) {
+            legacyRestart = nil
+            runClient(wine: wine, bottle: bottle, url: url)
+            return
+        }
+        guard DispatchTime.now() < deadline else {
+            legacyRestartFailed()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.waitForLegacyQuit(old, processes: processes, wine: wine, bottle: bottle, url: url,
+                                    token: token, deadline: deadline)
+        }
+    }
+
+    private func legacyRestartFailed() {
+        let token = legacyRestart
+        let alert = NSAlert()
+        alert.messageText = "無法確認 Nexon Launcher 可以重新開啟"
+        alert.informativeText = "如果 Nexon Launcher 仍開著，請等下載或更新完成。確認該容器專供瑪奇 Mobile、遊戲已關閉後，在 CrossOver 選取該容器，按「結束所有應用程式」（Quit All Applications），再開啟「瑪奇 Mobile 啟動」。"
+        alert.addButton(withTitle: "好")
+        _ = runLegacyRestartAlert(alert)
+        guard legacyRestart == token else { return }
+        legacyRestart = nil
+        terminateIfIdle()
+    }
+
+    private func runLegacyRestartAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        legacyRestartAlertWindow = alert.window
+        defer {
+            legacyRestartAlertWindow = nil
+            alert.window.orderOut(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal()
     }
 
     private func runClient(wine: URL, bottle: NexonBottle, url: String) {
@@ -488,7 +583,7 @@ final class NexonBridge: NSObject, NSApplicationDelegate {
     }
 
     private func terminateIfIdle() {
-        if jobs.isEmpty && gameExitMonitor == nil { NSApp.terminate(nil) }
+        if jobs.isEmpty && gameExitMonitor == nil && legacyRestart == nil { NSApp.terminate(nil) }
     }
 }
 

@@ -100,9 +100,80 @@ download_official_file() {
 render_official_icon() {
     local url="$1" name="$2"
     local image="$stage/$name" iconset="$stage/$name.iconset"
-    download_official_file "$url" "$image" 4194304 &&
-        "$source_app/Contents/MacOS/NexonBridge" --make-app-icon "$image" "$iconset" &&
-        /usr/bin/iconutil -c icns -o "$stage/$name.icns" "$iconset" &&
+    download_official_file "$url" "$image" 4194304 || return 1
+    /bin/mkdir "$iconset" || return 1
+
+    # ImageIO and CoreGraphics ship with macOS and work before the App has been opened.
+    /usr/bin/osascript -l JavaScript - "$image" "$iconset" <<'JAVASCRIPT' || return 1
+ObjC.import('Foundation');
+ObjC.import('ImageIO');
+ObjC.import('CoreGraphics');
+
+function run([input, output]) {
+    const invalidArtwork = '圖示來源須是邊長 512 至 2048 像素的單張正方形 PNG、JPEG 或 WebP。';
+    const data = $.NSData.dataWithContentsOfFile(input);
+    const length = Number(data.length);
+    if (!(length >= 12)) {
+        throw new Error(invalidArtwork);
+    }
+    const source = $.CGImageSourceCreateWithData(data, null);
+    if (Number($.CGImageSourceGetCount(source)) !== 1 ||
+        Number($.CGImageSourceGetStatus(source)) !== Number($.kCGImageStatusComplete)) {
+        throw new Error(invalidArtwork);
+    }
+    const type = ObjC.unwrap(ObjC.castRefToObject($.CGImageSourceGetType(source)));
+    if (!['public.png', 'public.jpeg', 'org.webmproject.webp'].includes(type)) {
+        throw new Error(invalidArtwork);
+    }
+    if (type === 'public.png') {
+        // ImageIO may decode a partial PNG even when its final IEND chunk is missing.
+        const trailer = data.subdataWithRange($.NSMakeRange(length - 12, 12));
+        if (ObjC.unwrap(trailer.base64EncodedStringWithOptions(0)) !== 'AAAAAElFTkSuQmCC') {
+            throw new Error(invalidArtwork);
+        }
+    }
+    const properties = ObjC.castRefToObject($.CGImageSourceCopyPropertiesAtIndex(source, 0, null));
+    const width = ObjC.unwrap(properties.objectForKey(ObjC.castRefToObject($.kCGImagePropertyPixelWidth)));
+    const height = ObjC.unwrap(properties.objectForKey(ObjC.castRefToObject($.kCGImagePropertyPixelHeight)));
+    if (!Number.isInteger(width) || width < 512 || width > 2048 || width !== height) {
+        throw new Error(invalidArtwork);
+    }
+    const artwork = $.CGImageSourceCreateImageAtIndex(source, 0, null);
+    if (Number($.CGImageGetWidth(artwork)) !== width || Number($.CGImageGetHeight(artwork)) !== height) {
+        throw new Error(invalidArtwork);
+    }
+
+    const colorSpace = $.CGColorSpaceCreateWithName($.kCGColorSpaceSRGB);
+    for (const size of [16, 32, 128, 256, 512]) {
+        for (const [scale, suffix] of [[1, ''], [2, '@2x']]) {
+            const side = size * scale;
+            const context = $.CGBitmapContextCreate(null, side, side, 8, side * 4, colorSpace,
+                                                    $.kCGImageAlphaPremultipliedLast);
+            if (Number($.CGBitmapContextGetWidth(context)) !== side) {
+                throw new Error('無法產生 macOS 圖示。');
+            }
+            const extent = side * 0.8046875;
+            const inset = (side - extent) / 2;
+            const radius = extent * 0.21;
+            const box = $.CGRectMake(inset, inset, extent, extent);
+            $.CGContextSetAllowsAntialiasing(context, true);
+            $.CGContextSetShouldAntialias(context, true);
+            $.CGContextSetInterpolationQuality(context, $.kCGInterpolationHigh);
+            $.CGContextAddPath(context, $.CGPathCreateWithRoundedRect(box, radius, radius, null));
+            $.CGContextClip(context);
+            $.CGContextDrawImage(context, box, artwork);
+
+            const path = output + '/icon_' + size + 'x' + size + suffix + '.png';
+            const png = $.CGImageDestinationCreateWithURL($.NSURL.fileURLWithPath(path), $('public.png'), 1, null);
+            $.CGImageDestinationAddImage(png, $.CGBitmapContextCreateImage(context), null);
+            if (!$.CGImageDestinationFinalize(png)) {
+                throw new Error('無法產生 macOS 圖示。');
+            }
+        }
+    }
+}
+JAVASCRIPT
+    /usr/bin/iconutil -c icns -o "$stage/$name.icns" "$iconset" &&
         mv "$stage/$name.icns" "$stage/MabinogiOfficial.icns"
 }
 
@@ -166,7 +237,22 @@ if [ -n "$cask_stage" ]; then
     mv "$staged_app" "$cask_stage/$app_name"
     exit 0
 fi
-"$staged_app/Contents/MacOS/NexonBridge" --remember-handler
+# Registration can change an implicit nxl:// handler. Save the original choice
+# using LaunchServices before installing and opening the downloaded App.
+/usr/bin/osascript -l JavaScript - "$app_id" <<'JXA'
+ObjC.import('AppKit')
+function run([identifier]) {
+    const preferences = $.NSUserDefaults.alloc.initWithSuiteName(identifier)
+    if (!preferences.stringForKey('PreviousNXLHandlerPath').isNil()) return
+    const url = $.NSURL.URLWithString('nxl://play/59826')
+    const previous = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL(url)
+    if (previous.isNil()) return
+    if (ObjC.unwrap($.NSBundle.bundleWithURL(previous).bundleIdentifier) !== identifier) {
+        preferences.setObjectForKey(previous.path, 'PreviousNXLHandlerPath')
+        if (!preferences.synchronize) throw Error('無法儲存原本的 Nexon 連結處理程式。')
+    }
+}
+JXA
 
 backup_app() {
     local app="$1" backup verification pending archive
@@ -233,6 +319,7 @@ if mv "$staged_app" "$target_app"; then
     if "$lsregister" -f "$target_app"; then
         if $modern_package && ! $no_launch; then
             echo "安裝完成：$target_app"
+            echo '若 macOS 無法驗證開發者，請確認下載來源後，到「系統設定 → 隱私權與安全性」為這個 App 選「強制打開」。'
             if ! /usr/bin/open "$target_app"; then
                 echo "無法自動開啟，請手動開啟：$target_app" >&2
             fi

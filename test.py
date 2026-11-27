@@ -268,7 +268,9 @@ if os.environ.get("TEST_OPEN_FAIL"):
                 wrapper = wrapper.replace("/usr/bin/curl", str(curl))
                 wrapper = wrapper.replace("/usr/bin/iconutil", str(iconutil))
                 wrapper = wrapper.replace("/usr/bin/open", str(opener))
-                wrapper = wrapper.replace('"$staged_app/Contents/MacOS/NexonBridge" --remember-handler', f'echo remember >> "{root / "handler.log"}"')
+                # Capture the handler snapshot without writing the user's LaunchServices preferences.
+                wrapper = wrapper.replace('/usr/bin/osascript -l JavaScript - "$app_id"',
+                                          f'/bin/cat >> "{root / "handler.log"}"')
                 wrapper = wrapper.replace('"$app/Contents/MacOS/NexonBridge" --restore-handler', ': # Do not change real URL preferences in fixture tests')
                 wrapper = wrapper.replace("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", str(register))
                 (package / filename).write_text(wrapper)
@@ -458,6 +460,24 @@ if os.environ.get("TEST_OPEN_FAIL"):
             wrapper_run(entry, success=False, args=(*args, "--cask-stage", str(cask_stage)))
             assert app_operations()[before:] == []
             assert state_file.read_bytes() == network_before and (root / "handler.log").read_bytes() == handler_before
+
+            # A downloaded helper may be denied execution while its bundle still verifies.
+            # The installer must render the icon and finish without ever running that helper.
+            restricted_dir = root / "Restricted Payload"
+            restricted_app = restricted_dir / app_name
+            subprocess.run(["/usr/bin/ditto", str(built_app), str(restricted_app)], check=True)
+            (restricted_app / "Contents/MacOS/NexonBridge").chmod(0o644)
+            package_app(restricted_app, modern_payload)
+            blocked_target = root / "Restricted Applications"
+            before = len(app_operations())
+            result = wrapper_run(entry, args=("--app-dir", str(blocked_target)))
+            assert "Contents/MacOS/NexonBridge" not in result.stderr, result.stderr
+            blocked_app = blocked_target / app_name
+            assert not os.access(blocked_app / "Contents/MacOS/NexonBridge", os.X_OK)
+            assert (blocked_app / icon_path.relative_to(installed)).read_bytes().startswith(b"icns")
+            assert app_operations()[before:] == [["-f", str(blocked_app)], ["open", str(blocked_app)]]
+            assert plist.exists()
+            package_app(built_app, modern_payload)
 
             before = len(app_operations())
             result = wrapper_run(entry, args=args, TEST_ICON_MODE="failed-conversion")

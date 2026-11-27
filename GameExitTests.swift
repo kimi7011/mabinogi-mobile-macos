@@ -1,6 +1,8 @@
+import Darwin
 import Foundation
 
 func testGameExitTracker() {
+    testLegacyNexonInvocation()
     let game = WatchedProcess(pid: 101, startSeconds: 100, startMicroseconds: 1)
     let replacement = WatchedProcess(pid: 102, startSeconds: 110, startMicroseconds: 1)
     let launcher = WatchedProcess(pid: 201, startSeconds: 90, startMicroseconds: 1)
@@ -10,6 +12,9 @@ func testGameExitTracker() {
     let launcherOnly = GameExitSnapshot(games: [], launchers: [launcher])
     let playing = GameExitSnapshot(games: [game], launchers: [launcher])
     let playingAgain = GameExitSnapshot(games: [replacement], launchers: [launcher])
+    precondition(launcherOnly.soleIdleLauncher == launcher)
+    precondition(playing.soleIdleLauncher == nil && empty.soleIdleLauncher == nil)
+    precondition(GameExitSnapshot(games: [], launchers: [launcher, otherLauncher]).soleIdleLauncher == nil)
 
     func expect(_ tracker: inout GameExitTracker, _ snapshot: GameExitSnapshot?, at time: TimeInterval,
                 _ expected: GameExitTracker.Action, stillRunning: Set<WatchedProcess> = [],
@@ -113,4 +118,57 @@ func testGameExitTracker() {
     expect(&missingMapping, launcherOnly, at: 61, .wait)
     expect(&missingMapping, launcherOnly, at: 66.9, .wait)
     expect(&missingMapping, launcherOnly, at: 67, .quit(launcher))
+}
+
+private func testLegacyNexonInvocation() {
+    let bottle = NexonBottle(directory: URL(fileURLWithPath: "/fixture/Bottle"), programFiles: "Program Files (x86)")
+    let legacy = [bottle.windowsClient, bottle.windowsFrontEnd, ""]
+    let compatible = [bottle.windowsClient] + Launcher.flags + ["--nxl=fixture", bottle.windowsFrontEnd, ""]
+    func buffer(for arguments: [String], environment: [String] = []) -> Data {
+        var count = Int32(arguments.count)
+        var data = withUnsafeBytes(of: &count) { Data($0) }
+        data.append(contentsOf: "/path/to/wine".utf8)
+        data.append(contentsOf: [0, 0, 0])
+        for item in arguments + environment {
+            data.append(contentsOf: item.utf8)
+            data.append(0)
+        }
+        return data
+    }
+    func matches(_ data: Data) -> Bool {
+        data.withUnsafeBytes { NexonClientInvocation.isLegacy($0, bottle: bottle) }
+    }
+
+    precondition(matches(buffer(for: legacy)))
+    precondition(matches(buffer(for: legacy, environment: Launcher.flags)))
+    precondition(!matches(buffer(for: compatible)))
+    precondition(!matches(buffer(for: [bottle.windowsClient, bottle.windowsFrontEnd, Launcher.flags[0]])))
+    precondition(!matches(buffer(for: [bottle.windowsClient, "--type=renderer", ""])))
+    precondition(!matches(buffer(for: ["nexon_client.exe", bottle.windowsFrontEnd, ""])))
+    precondition(!matches(buffer(for: [bottle.windowsClient, "front_end", ""])))
+    precondition(!matches(buffer(for: [bottle.windowsClient, bottle.windowsFrontEnd])))
+    precondition(!matches(buffer(for: legacy).dropLast()))
+    precondition(!matches(Data()))
+
+    let files = FileManager.default
+    let fixture = files.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let actual = fixture.appendingPathComponent("actual", isDirectory: true)
+    let alias = fixture.appendingPathComponent("alias", isDirectory: true)
+    defer { try? files.removeItem(at: fixture) }
+    do {
+        try files.createDirectory(at: actual, withIntermediateDirectories: true)
+        try files.createSymbolicLink(at: alias, withDestinationURL: actual)
+        let aliasedBottle = NexonBottle(directory: alias, programFiles: bottle.programFiles)
+        try files.createDirectory(at: aliasedBottle.clientDirectory, withIntermediateDirectories: true)
+        try Data([0x4D, 0x5A]).write(to: aliasedBottle.executable)
+        let processes = GameExitProcesses(bottle: aliasedBottle, wine: URL(fileURLWithPath: "/fixture/bin/wine"))
+        let expired = WatchedProcess(pid: getpid(), startSeconds: 0, startMicroseconds: 0)
+        precondition(!processes.permitsCleanup())
+        precondition(processes.canRelaunchAfterLegacyQuit(expired))
+        let library = alias.appendingPathComponent("drive_c/Nexon/Library", isDirectory: true)
+        try files.createDirectory(at: library.appendingPathComponent("Another game"), withIntermediateDirectories: true)
+        precondition(!processes.canRelaunchAfterLegacyQuit(expired))
+    } catch {
+        preconditionFailure("Legacy launcher scope fixture could not be prepared: \(error.localizedDescription)")
+    }
 }

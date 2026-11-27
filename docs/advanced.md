@@ -4,18 +4,20 @@
 
 ## 安裝或開啟失敗
 
-- **macOS 擋下首次開啟**。若已確認來源與檔案完整性，先嘗試打開檔案，再到「系統設定 → 隱私權與安全性」使用針對該檔案的「強制打開」選項。[Apple 支援](https://support.apple.com/zh-tw/102445)
-- **找不到已安裝的 App**。在 Finder 選「前往 → 前往檔案夾」，輸入 `~/Applications`，開啟「瑪奇 Mobile 啟動」。
+- **macOS 擋下首次開啟**。若已確認下載來源與檔案完整性，先嘗試開啟檔案。看到「未打開」時選「完成」，前往「系統設定 → 隱私權與安全性」，找到列出該檔名的訊息並選「強制打開」。系統可能會再次詢問是否打開，並要求管理員驗證。[Apple 支援](https://support.apple.com/zh-tw/102445)
+- **安裝到一半顯示 `Killed: 9`，找不到 App**。若終端機最後一行指令包含 `--remember-handler`，舊版安裝包已在複製 App 前中斷。請重新下載最新版 ZIP，完整解壓縮後執行最外層的「安裝並啟動.command」，直到終端機印出「安裝完成」及 App 的路徑。
+- **開啟 App 顯示「需要安裝網路相容設定」**。ZIP 版請執行上述安裝指令並完成管理員驗證。直接解開 `Support/launcher-payload.zip` 只會取得 App。Homebrew 版請執行 `sudo "$(command -v mabinogi-mobile-network)" install`。完成後再開啟「瑪奇 Mobile 啟動」。
+- **安裝完成後找不到 App**。在 Finder 選「前往 → 前往檔案夾」，輸入 `~/Applications`，開啟「瑪奇 Mobile 啟動」。
 - **找不到容器**。請先在 CrossOver 給台灣版 Nexon Launcher 建立專用的 Windows 10 64 位元容器。容器放在外接磁碟時，先掛載磁碟，並依 macOS 提示允許存取卸除式卷宗。
 - **官網圖示暫時無法下載**。安裝器仍會安裝啟動器，並保留上次已驗證的官方圖示。首次安裝會暫用 macOS 預設圖示。稍後再執行「安裝並啟動.command」即可重試官方圖示。[台灣 App Store](https://apps.apple.com/tw/app/id6759030432)
 
 ## Nexon Launcher 開啟後是透明視窗
 
-直接從 CrossOver 開啟 Nexon Launcher 時，可能遇到視窗出現但內容未顯示。請先等 Nexon 安裝或更新完成，再關閉專用容器裡的程式。
+從 CrossOver 的 Nexon 捷徑開啟時，可能先看到「Loading Nexon Launcher」，接著視窗變透明。舊視窗還在時，Nexon 會把第二次啟動交給同一個程序，這時再點一次也可能仍然透明。
 
-1. 在 CrossOver 選取瑪奇專用的容器，點選「Quit All Applications」。若程式沒有回應，而且容器內沒有下載或更新，再選「Force Quit」。[CrossOver 使用者指南](https://support.codeweavers.com/user-guides/crossover-mac-user-guide)
-2. 執行「安裝並啟動.command」，或直接開啟已安裝的「瑪奇 Mobile 啟動」。選剛才的容器。這個入口會帶入 Nexon 視窗所需的相容參數。
-3. 如果仍然透明，請在 GitHub issue 附上 macOS 版本、CrossOver 版本，以及是從哪個入口開啟。請遮蔽登入資訊。
+1. 等官方安裝或更新完成，開啟個人「應用程式」裡的「瑪奇 Mobile 啟動」，選取同一個容器。若工具辨識出舊的 Nexon 視窗，依提示正常重新開啟。若仍在下載或更新，請選「稍後」。
+2. 若沒有出現重開提示，或舊視窗沒有回應，待下載與更新結束後，在 CrossOver 選取**瑪奇專用容器**，使用「Quit All Applications」。若仍無回應，確認該容器內的工作都已結束，再使用「Force Quit」。然後從「瑪奇 Mobile 啟動」開啟。[CrossOver 使用者指南](https://support.codeweavers.com/user-guides/crossover-mac-user-guide)
+3. 若仍然透明，請附上 macOS 版本、Mac 型號、CrossOver 版本，以及從哪個入口開啟。截圖請遮蔽登入資訊。
 
 ## 登入、更新與圖形
 

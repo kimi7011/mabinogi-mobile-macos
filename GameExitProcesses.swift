@@ -10,6 +10,37 @@ struct WatchedProcess: Hashable {
 struct GameExitSnapshot {
     let games: Set<WatchedProcess>
     let launchers: Set<WatchedProcess>
+
+    var soleIdleLauncher: WatchedProcess? {
+        games.isEmpty && launchers.count == 1 ? launchers.first : nil
+    }
+}
+
+enum NexonClientInvocation {
+    // KERN_PROCARGS2 contains an exec path, alignment NULs, argc arguments, then environment data.
+    // Compare known bytes in place and never turn an arbitrary argument into a String.
+    static func isLegacy(_ bytes: UnsafeRawBufferPointer, bottle: NexonBottle) -> Bool {
+        let wordSize = MemoryLayout<Int32>.size
+        guard bytes.count > wordSize, bytes[wordSize] == UInt8(ascii: "/") else { return false }
+        var count: Int32 = 0
+        withUnsafeMutableBytes(of: &count) { $0.copyBytes(from: bytes.prefix(wordSize)) }
+        guard count == 3 else { return false }
+
+        var cursor = wordSize
+        while cursor < bytes.count && bytes[cursor] != 0 { cursor += 1 }
+        while cursor < bytes.count && bytes[cursor] == 0 { cursor += 1 }
+        var arguments: [Range<Int>] = []
+        for _ in 0..<count {
+            let start = cursor
+            while cursor < bytes.count && bytes[cursor] != 0 { cursor += 1 }
+            guard cursor < bytes.count else { return false }
+            arguments.append(start..<cursor)
+            cursor += 1
+        }
+
+        return bytes[arguments[0]].elementsEqual(bottle.windowsClient.utf8) &&
+            bytes[arguments[1]].elementsEqual(bottle.windowsFrontEnd.utf8) && arguments[2].isEmpty
+    }
 }
 
 struct GameExitProcesses {
@@ -75,27 +106,83 @@ struct GameExitProcesses {
 
     func permitsCleanup() -> Bool {
         guard case let .available(game) = executable(at: bottle.taiwanGameExecutable) else { return false }
-        let gameDirectory = game.deletingLastPathComponent().deletingLastPathComponent()
+        return hasDedicatedLibrary(game.deletingLastPathComponent().deletingLastPathComponent(), allowMissing: false)
+    }
+
+    private func hasDedicatedLibrary(_ gameDirectory: URL, allowMissing: Bool) -> Bool {
         let library = Self.canonical(bottle.directory.appendingPathComponent("drive_c/Nexon/Library", isDirectory: true))
-        guard Self.isWithin(library, bottleDirectory), gameDirectory.deletingLastPathComponent().path == library.path,
-              let entries = try? FileManager.default.contentsOfDirectory(
-                at: library, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
-              entries.contains(where: { $0.path == gameDirectory.path }) else { return false }
+        guard Self.isWithin(library, bottleDirectory), gameDirectory.deletingLastPathComponent().path == library.path else { return false }
+        let entries: [URL]
+        do {
+            entries = try FileManager.default.contentsOfDirectory(at: library,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
+        } catch let error as CocoaError {
+            return allowMissing && (error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile)
+        } catch { return false }
+        let gameDirectoryName = gameDirectory.lastPathComponent
+        guard allowMissing || entries.contains(where: { $0.lastPathComponent == gameDirectoryName }) else { return false }
         // Nexon can manage other games in the same bottle. Any other library directory or link is ambiguous.
         return entries.allSatisfy { entry in
-            if entry.path == gameDirectory.path { return true }
-            guard let values = try? entry.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
-            return values.isRegularFile == true && values.isSymbolicLink == false
+            guard let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]),
+                  values.isSymbolicLink == false else { return false }
+            return entry.lastPathComponent == gameDirectoryName ? values.isDirectory == true : values.isRegularFile == true
         }
     }
 
     func requestQuit(_ identity: WatchedProcess, force: Bool) {
-        guard permitsCleanup(), let current = snapshot(),
-              current.games.isEmpty, current.launchers == [identity],
-              let application = launcherApplication(pid: identity.pid),
-              case let .running(uid, live) = Self.status(of: identity.pid), uid == getuid(), live == identity else { return }
+        guard permitsCleanup(), snapshot()?.soleIdleLauncher == identity,
+              let application = launcherApplication(pid: identity.pid), isCurrent(identity) else { return }
         // Target only this Launch Services application, including when the process ignores a normal quit request.
         if force { _ = application.forceTerminate() } else { _ = application.terminate() }
+    }
+
+    func legacyLauncher() -> WatchedProcess? {
+        guard allowsLegacyRestart(), let identity = snapshot()?.soleIdleLauncher,
+              isLegacyInvocation(of: identity) else { return nil }
+        return identity
+    }
+
+    func requestLegacyQuit(_ identity: WatchedProcess) -> Bool {
+        guard legacyLauncher() == identity, let application = launcherApplication(pid: identity.pid),
+              isCurrent(identity) else { return false }
+        return application.terminate()
+    }
+
+    func canRelaunchAfterLegacyQuit(_ identity: WatchedProcess) -> Bool {
+        guard hasExited(identity), allowsLegacyRestart(), let current = snapshot() else { return false }
+        return current.games.isEmpty && current.launchers.isEmpty
+    }
+
+    private func allowsLegacyRestart() -> Bool {
+        switch executable(at: bottle.taiwanGameExecutable) {
+        case let .available(game):
+            return hasDedicatedLibrary(game.deletingLastPathComponent().deletingLastPathComponent(), allowMissing: false)
+        case .missing:
+            let directory = Self.canonical(bottle.taiwanGameExecutable.deletingLastPathComponent().deletingLastPathComponent())
+            return hasDedicatedLibrary(directory, allowMissing: true)
+        case .unknown:
+            return false
+        }
+    }
+
+    private func isCurrent(_ identity: WatchedProcess) -> Bool {
+        guard case let .running(uid, live) = Self.status(of: identity.pid) else { return false }
+        return uid == getuid() && live == identity
+    }
+
+    private func isLegacyInvocation(of identity: WatchedProcess) -> Bool {
+        guard isCurrent(identity) else { return false }
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, identity.pid]
+        var count = 0
+        guard sysctl(&mib, 3, nil, &count, nil, 0) == 0, (1...1_048_576).contains(count) else { return false }
+        var bytes = [UInt8](repeating: 0, count: count)
+        return bytes.withUnsafeMutableBytes { buffer in
+            guard let pointer = buffer.baseAddress else { return false }
+            defer { _ = memset_s(pointer, buffer.count, 0, buffer.count) }
+            guard sysctl(&mib, 3, pointer, &count, nil, 0) == 0, (1...buffer.count).contains(count),
+                  isCurrent(identity) else { return false }
+            return NexonClientInvocation.isLegacy(UnsafeRawBufferPointer(start: pointer, count: count), bottle: bottle)
+        }
     }
 
     private func executable(at file: URL) -> Executable {
@@ -169,7 +256,20 @@ struct GameExitProcesses {
         return application
     }
 
-    private static func canonical(_ url: URL) -> URL { url.standardizedFileURL.resolvingSymlinksInPath() }
+    private static func canonical(_ url: URL) -> URL {
+        let absolute = url.standardizedFileURL
+        if let path = absolute.path.withCString({ realpath($0, nil) }) {
+            defer { free(path) }
+            return URL(fileURLWithPath: String(cString: path))
+        }
+        let error = errno
+        let parent = absolute.deletingLastPathComponent()
+        guard error == ENOENT, parent.path != absolute.path, !parent.path.isEmpty else {
+            return absolute
+        }
+        // First-time launch can precede creation of Nexon/Library. Resolve its existing ancestors too.
+        return canonical(parent).appendingPathComponent(absolute.lastPathComponent)
+    }
 
     private static func isWithin(_ url: URL, _ directory: URL) -> Bool {
         url.pathComponents.starts(with: directory.pathComponents)
