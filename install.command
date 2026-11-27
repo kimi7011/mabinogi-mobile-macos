@@ -4,6 +4,7 @@ project_dir="$(cd "$(dirname "$0")" && pwd)"
 target_dir="$HOME/Applications"
 keep_network=false
 no_launch=false
+cask_stage=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --app-dir)
@@ -11,6 +12,9 @@ while [ "$#" -gt 0 ]; do
             target_dir="$2"; shift 2 ;;
         --keep-network) keep_network=true; shift ;;
         --no-launch) no_launch=true; shift ;;
+        --cask-stage)
+            [ "$#" -ge 2 ] && [[ "$2" = /* ]] || { echo '--cask-stage 需要絕對路徑。' >&2; exit 2; }
+            cask_stage="$2"; shift 2 ;;
         *) echo '用法：bash 安裝指令 [--app-dir /absolute/path] [--keep-network] [--no-launch]' >&2; exit 2 ;;
     esac
 done
@@ -30,9 +34,15 @@ if [ -e "$project_dir/Support" ] || [ -L "$project_dir/Support" ]; then
 fi
 payload="$support_dir/launcher-payload.zip"
 target_app="$target_dir/$app_name"
-mkdir -p "$target_dir"
+if [ -n "$cask_stage" ]; then
+    [[ -d "$cask_stage" && ! -L "$cask_stage" && ! -L "$cask_stage/$app_name" ]] ||
+        { echo 'Homebrew App 暫存位置無效。' >&2; exit 1; }
+    [[ -f "$payload" ]] || { echo 'Homebrew 安裝包不完整。' >&2; exit 1; }
+else
+    mkdir -p "$target_dir"
+fi
 if [ -L "$target_app" ]; then echo '目標 App 是符號連結，已保留。' >&2; exit 1; fi
-if [ -e "$target_app" ]; then
+if [ -e "$target_app" ] && { [ -z "$cask_stage" ] || [ -f "$target_app/Contents/Info.plist" ]; }; then
     existing_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$target_app/Contents/Info.plist")"
     case "$existing_id" in
         "$app_id") ;;
@@ -41,7 +51,7 @@ if [ -e "$target_app" ]; then
         *) echo '目標位置有其他程式，請先自行更名。' >&2; exit 1 ;;
     esac
 fi
-stage="$(mktemp -d "$target_dir/.mabinogi-install.XXXXXX")"
+stage="$(mktemp -d "${cask_stage:-$target_dir}/.mabinogi-install.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 if [ -f "$payload" ]; then
     /usr/bin/ditto -x -k "$payload" "$stage/payload"
@@ -63,6 +73,17 @@ fi
 /usr/bin/codesign --verify --deep --strict "$source_app"
 source_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$source_app/Contents/Info.plist")"
 [[ "$source_id" == "$app_id" ]] || { echo '安裝 App 的識別碼不符。' >&2; exit 1; }
+if [ -n "$cask_stage" ] && [ -e "$cask_stage/$app_name" ]; then
+    # Homebrew can restore an already prepared App while reverting an upgrade.
+    restored_app="$cask_stage/$app_name"
+    /usr/bin/codesign --verify --deep --strict "$restored_app"
+    restored_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$restored_app/Contents/Info.plist")"
+    restored_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$restored_app/Contents/Info.plist")"
+    source_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$source_app/Contents/Info.plist")"
+    [[ "$restored_id" == "$app_id" && "$restored_version" == "$source_version" ]] ||
+        { echo 'Homebrew 暫存 App 的識別碼或版本不符。' >&2; exit 1; }
+    exit 0
+fi
 staged_app="$stage/$app_name"
 /usr/bin/ditto "$source_app" "$staged_app"
 /usr/bin/codesign --verify --deep --strict "$staged_app"
@@ -139,6 +160,11 @@ if [ -f "$payload" ] && ! /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "
     else
         echo '暫用 macOS 預設圖示，繼續安裝。重跑安裝程式時會再嘗試下載官方圖示。'
     fi
+fi
+if [ -n "$cask_stage" ]; then
+    # Homebrew owns the installed app and moves the staged bundle itself.
+    mv "$staged_app" "$cask_stage/$app_name"
+    exit 0
 fi
 "$staged_app/Contents/MacOS/NexonBridge" --remember-handler
 

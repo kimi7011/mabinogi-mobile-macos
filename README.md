@@ -18,4 +18,15 @@
 
 [macOS 開啟提示、移除與疑難排解](docs/advanced.md) · [SHA-256](https://github.com/kimi7011/mabinogi-mobile-macos/releases/latest/download/SHA256SUMS.txt) · [回報問題](https://github.com/kimi7011/mabinogi-mobile-macos/issues)
 
+## 用 Homebrew 安裝
+
+若已使用 Homebrew，可以用下面的指令取代第一次安裝的第 3 步。
+
+```sh
+brew tap kimi7011/mabinogi-mobile-macos https://github.com/kimi7011/mabinogi-mobile-macos.git
+brew install --cask --appdir="$HOME/Applications" kimi7011/mabinogi-mobile-macos/mabinogi-mobile-macos
+```
+
+第一次使用時，在同一個終端機執行 `sudo "$(command -v mabinogi-mobile-network)" install`，完成一次網路相容設定。接著從個人的「應用程式」資料夾開啟「瑪奇 Mobile 啟動」。[接手 ZIP 版、升級與移除](docs/advanced.md#homebrew-維護)。
+
 社群製作的啟動工具，採用 [MIT 授權](LICENSE)。

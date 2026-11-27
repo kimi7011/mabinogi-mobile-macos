@@ -32,6 +32,12 @@
 - 更新前的舊啟動器會封存成 ZIP，位於 `~/Library/Application Support/MabinogiMobileMac/backups/`。若要回復，先關閉容器內的程式，再用解壓縮出的舊 App **取代**目前的 App。每次使用同一個安裝入口。
 - 命令列可用 `--no-launch` 只安裝。若已自行維護 TCP 緩衝區，可使用 `--keep-network`。安裝、移除都應使用相同的網路選項及 App 位置。
 
+## Homebrew 維護
+
+- **接手 ZIP 版**。先用 ZIP 安裝程式將現有 App 更新到 Homebrew 顯示的相同版本，再執行首頁的 Homebrew 安裝指令，並加上 `--adopt`。使用同一個 `--appdir` 就能沿用現有 App。
+- **升級**。先關閉遊戲與 Nexon Launcher，再執行 `brew update` 和 `brew upgrade --cask kimi7011/mabinogi-mobile-macos/mabinogi-mobile-macos`。首次完成的網路相容設定會沿用。
+- **移除**。若要還原本專案的網路相容設定，先執行 `sudo "$(command -v mabinogi-mobile-network)" remove`。接著執行 `brew uninstall --cask kimi7011/mabinogi-mobile-macos/mabinogi-mobile-macos`。CrossOver 容器、Nexon 登入資料和遊戲檔案會保留。
+
 ## 開發
 
 在裝有 Apple Command Line Tools 的 Mac 上執行：
@@ -42,3 +48,5 @@ python3 test.py 'dist/瑪奇 Mobile 啟動.app'
 ```
 
 本機建置可設定 `MABINOGI_ICON_PATH` 指定 `.icns` 圖示。回報問題時請附 macOS 和 CrossOver 版本，以及出錯的步驟。請遮蔽帳號和登入資訊。
+
+發布新安裝包時，`Casks/mabinogi-mobile-macos.rb` 的版本與 SHA-256 要對應同一個 GitHub Release 的 ZIP。

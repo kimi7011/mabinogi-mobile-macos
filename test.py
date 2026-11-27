@@ -440,6 +440,25 @@ if os.environ.get("TEST_OPEN_FAIL"):
             modern_app = destination / app_name
             args = ("--app-dir", str(destination))
 
+            cask_stage = root / "Homebrew Stage"
+            cask_stage.mkdir()
+            before = len(app_operations())
+            network_before = state_file.read_bytes()
+            handler_before = (root / "handler.log").read_bytes()
+            wrapper_run(entry, args=(*args, "--cask-stage", str(cask_stage)), TEST_ICON_MODE="invalid-large-image")
+            cask_app = cask_stage / app_name
+            cask_info = plistlib.loads((cask_app / info_path).read_bytes())
+            assert cask_info["CFBundleIconFile"] == "MabinogiOfficial.icns"
+            subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(cask_app)], check=True)
+            assert not destination.exists() and app_operations()[before:] == []
+            downloads_before = (root / "downloads.log").read_bytes()
+            wrapper_run(entry, args=(*args, "--cask-stage", str(cask_stage)), TEST_ICON_MODE="failed-lookup")
+            assert downloads_before == (root / "downloads.log").read_bytes(), "restored cask app skips rendering"
+            change_app_metadata(cask_app, {"CFBundleVersion": "0"})
+            wrapper_run(entry, success=False, args=(*args, "--cask-stage", str(cask_stage)))
+            assert app_operations()[before:] == []
+            assert state_file.read_bytes() == network_before and (root / "handler.log").read_bytes() == handler_before
+
             before = len(app_operations())
             result = wrapper_run(entry, args=args, TEST_ICON_MODE="failed-conversion")
             assert plist.exists() and modern_app.is_dir()
